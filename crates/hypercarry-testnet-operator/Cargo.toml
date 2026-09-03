@@ -27,7 +27,7 @@ rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
-signal-hook = "0.3"
+signal-hook = "0.4"
 tempfile = "3"
 
 [lints]
