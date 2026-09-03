@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "network": "testnet",
+  "commit": "0000000000000000000000000000000000000000",
+  "session_id": "replace-with-unique-session-id",
+  "account_address": "0x1111111111111111111111111111111111111111",
+  "authorized_signer_address": "0x2222222222222222222222222222222222222222",
+  "signer_alias": "keychain/hypercarry-testnet-agent",
+  "signer_socket": "/absolute/private/directory/hypercarry-testnet-signer.sock",
+  "journal_path": "/absolute/private/directory/session.jsonl",
+  "kill_switch_path": "/absolute/private/directory/KILL",
+  "evidence_path": "/absolute/private/directory/evidence.json",
+  "market": {
+    "venue": "hyperliquid",
+    "name": "BTC",
+    "asset_id": 0,
+    "price_tick": "0.1",
+    "size_step": "0.001",
+    "minimum_size": "0.001"
+  },
+  "order": {
+    "correlation_id": "replace-with-unique-intent-id",
+    "side": "buy",
+    "quantity": "0.001",
+    "limit_price": "100"
+  },
+  "risk": {
+    "account_mode": "unified_account",
+    "max_order_notional": "1",
+    "max_aggregate_notional": "2",
+    "max_price_deviation_bps": "100",
+    "max_leverage": "1",
+    "max_orders_per_window": 1,
+    "order_frequency_window_ms": 60000,
+    "max_open_orders": 1,
+    "max_rolling_loss": "0",
+    "max_market_data_age_ms": 5000,
+    "snapshot_observed_at_ms": 0,
+    "market_data_at_ms": 0,
+    "reference_price": "100",
+    "aggregate_notional": "0",
+    "account_equity": "100",
+    "open_order_count": 0,
+    "recent_order_times_ms": [],
+    "rolling_pnl": "0"
+  },
+  "transport": {
+    "connect_timeout_ms": 2000,
+    "request_timeout_ms": 10000,
+    "signer_timeout_ms": 5000,
+    "action_ttl_ms": 5000,
+    "max_reconcile_attempts": 20,
+    "reconcile_interval_ms": 500,
+    "max_requests_per_minute": 60,
+    "retry_max_attempts": 3,
+    "retry_base_backoff_ms": 100,
+    "retry_max_backoff_ms": 1000
+  }
+}

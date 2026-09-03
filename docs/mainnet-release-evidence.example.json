@@ -1,0 +1,20 @@
+{
+  "schema_version": 2,
+  "testnet_sessions": [],
+  "reviewed_bundle": {
+    "source_commit": "0000000000000000000000000000000000000000",
+    "cargo_lock_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "mainnet_transport_artifact": "pending",
+    "mainnet_signer_key_id": "pending",
+    "config_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "dependency_audit": "pending",
+    "execution_security_review": "pending",
+    "rollback_test": "pending"
+  },
+  "release_decision": {
+    "approved": false,
+    "approver": "pending",
+    "decided_at_ms": 0,
+    "evidence_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

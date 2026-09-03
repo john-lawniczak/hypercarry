@@ -1,0 +1,34 @@
+[package]
+name = "hypercarry-testnet-operator"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Non-shipping, testnet-only lifecycle and evidence harness for hypercarry."
+
+[[bin]]
+name = "hypercarry-testnet-operator"
+path = "src/main.rs"
+
+[[bin]]
+name = "hypercarry-foundry-testnet-signer"
+path = "src/bin/foundry_signer.rs"
+
+[dependencies]
+anyhow.workspace = true
+alloy.workspace = true
+chrono.workspace = true
+clap.workspace = true
+hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution", features = ["testnet-execution"] }
+hypersdk.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+signal-hook = "0.3"
+tempfile = "3"
+
+[lints]
+workspace = true
