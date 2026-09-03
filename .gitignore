@@ -1,0 +1,19 @@
+# Build artifacts
+/target/
+
+# Recorded datasets (see README: data is local, not committed)
+/data/
+*.parquet
+*.duckdb
+
+# Editor / OS
+/.idea/
+/.vscode/
+**/*.rs.bk
+.DS_Store
+
+# Local environment configuration (never commit credentials)
+.env
+.env.*
+!.env.example
+!.env.*.example
