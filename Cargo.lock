@@ -3488,7 +3488,7 @@ name = "hypercarry-recorder"
 version = "0.0.0"
 dependencies = [
  "arrow-array 59.2.0",
- "arrow-schema 59.3.0",
+ "arrow-schema 60.0.0",
  "futures-util",
  "hypercarry-core",
  "parquet",
@@ -3507,7 +3507,7 @@ name = "hypercarry-storage"
 version = "0.0.0"
 dependencies = [
  "arrow-array 59.2.0",
- "arrow-schema 59.3.0",
+ "arrow-schema 60.0.0",
  "bytes",
  "chrono",
  "hypercarry-core",
