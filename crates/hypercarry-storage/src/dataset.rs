@@ -1181,12 +1181,10 @@ mod tests {
                 .expect("stream reads"),
             vec![first, next_day]
         );
-        assert!(
-            dataset
-                .stream_records(Network::Testnet, "hyperliquid", "ETH")
-                .expect("missing stream is empty")
-                .is_empty()
-        );
+        let absent = dataset
+            .stream_records(Network::Testnet, "hyperliquid", "ETH")
+            .expect("missing stream is empty");
+        assert!(absent.is_empty(), "absent stream returned rows: {absent:?}");
     }
 
     #[test]

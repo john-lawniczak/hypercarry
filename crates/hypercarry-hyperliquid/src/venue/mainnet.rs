@@ -613,7 +613,11 @@ mod tests {
             let token = authorization(&engine, &gate, &order);
             assert!(place_authorized(&mut engine, &gate, token, &Allow).is_err());
             assert_eq!(engine.signer.calls.get(), 1);
-            assert!(engine.transport.requests.is_empty());
+            assert!(
+                engine.transport.requests.is_empty(),
+                "submitted: {:?}",
+                engine.transport.requests
+            );
         }
     }
     #[test]
@@ -713,6 +717,10 @@ mod tests {
             last_nonce: engine.last_nonce,
         };
         assert!(place_authorized(&mut delayed, &gate, token, &Allow).is_err());
-        assert!(delayed.transport.requests.is_empty());
+        assert!(
+            delayed.transport.requests.is_empty(),
+            "submitted: {:?}",
+            delayed.transport.requests
+        );
     }
 }

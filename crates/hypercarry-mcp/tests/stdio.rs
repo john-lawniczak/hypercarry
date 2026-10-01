@@ -11,7 +11,11 @@ fn trade_launch_requires_explicit_mainnet_enable() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(
+        output.stdout.is_empty(),
+        "printed to stdout: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
