@@ -1123,9 +1123,9 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "arrow-array"
-version = "59.3.0"
+version = "59.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e5f6adeffdf587d7a31db5d2266189624b526730cd3627f9ff9fedae97ad584"
+checksum = "bc9a4a4b2b5ecd0e04df03471661cb61f28bed3c7fd50994715129b01b2edb97"
 dependencies = [
  "ahash 0.8.12",
  "arrow-buffer",
@@ -1141,9 +1141,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-buffer"
-version = "59.3.0"
+version = "59.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "097d193003ce7995d5d087089069ec2a6e0187faf5a6f8c9f38af2645d987182"
+checksum = "c12b576ef18c1deb80925a248b25ad84f419198d791b8e293fc6aaa60441fe90"
 dependencies = [
  "bytes",
  "half",
@@ -1153,9 +1153,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-data"
-version = "59.3.0"
+version = "59.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ba2f832eaeca24b8f26143dba750e42ee4ab51cf7d65e701ca9607cfda9f358"
+checksum = "723fe4aeed7604e00b9883a465af4ff0a0e6c44c03e41a68c3d1cbc403e0e44d"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
@@ -3364,17 +3364,97 @@ dependencies = [
 name = "hypercarry-execution"
 version = "0.0.0"
 dependencies = [
+ "fs2",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+]
+
+[[package]]
+name = "hypercarry-executor"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hypercarry-execution",
+ "hypercarry-hyperliquid",
+ "hypercarry-mainnet-config",
+ "reqwest 0.13.4",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "signal-hook 0.4.4",
+ "tempfile",
+]
+
+[[package]]
+name = "hypercarry-hyperliquid"
+version = "0.0.0"
+dependencies = [
  "alloy",
  "chrono",
- "fs2",
  "hypercarry-core",
+ "hypercarry-execution",
  "hypercarry-recorder",
  "hypersdk",
  "reqwest 0.13.4",
  "rust_decimal",
  "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hypercarry-mainnet-config"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "hypercarry-execution",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "sha2 0.11.0",
+ "tempfile",
+]
+
+[[package]]
+name = "hypercarry-mainnet-services"
+version = "0.0.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "chrono",
+ "clap",
+ "fs2",
+ "hypercarry-execution",
+ "hypercarry-executor",
+ "hypercarry-mainnet-config",
+ "hypersdk",
+ "reqwest 0.13.4",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "signal-hook 0.4.4",
+ "tempfile",
+]
+
+[[package]]
+name = "hypercarry-mcp"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hypercarry-core",
+ "hypercarry-storage",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "signal-hook 0.4.4",
  "tempfile",
 ]
 
@@ -3413,6 +3493,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "hypercarry-supervisor"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hypercarry-execution",
+ "hypercarry-mainnet-config",
+ "reqwest 0.13.4",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "hypercarry-testnet-operator"
 version = "0.0.0"
 dependencies = [
@@ -3421,6 +3516,7 @@ dependencies = [
  "chrono",
  "clap",
  "hypercarry-execution",
+ "hypercarry-hyperliquid",
  "hypersdk",
  "rust_decimal",
  "serde",
@@ -5380,9 +5476,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -6100,7 +6196,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

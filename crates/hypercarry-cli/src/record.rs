@@ -30,12 +30,12 @@ pub fn run(options: &RecordOptions) -> Result<(), CliError> {
         tokio::pin!(recording);
         tokio::select! {
             result = &mut recording => result,
-            signal = tokio::signal::ctrl_c() => {
+            signal = stop_requested() => {
                 cancellation.cancel();
                 let result = recording.await;
                 if let Err(error) = signal {
                     return Err(RecorderError::Task(format!(
-                        "could not install the Ctrl-C handler: {error}"
+                        "could not install the shutdown signal handler: {error}"
                     )));
                 }
                 result
@@ -45,6 +45,31 @@ pub fn run(options: &RecordOptions) -> Result<(), CliError> {
     let diagnostics = diagnostics.map_err(record_error)?;
     let stdout = io::stdout();
     write_diagnostics(&mut stdout.lock(), &diagnostics, options.output)
+}
+
+/// Resolve when the operator asks the session to stop.
+///
+/// A service manager stops a unit with `SIGTERM`, so a recorder that listened
+/// for Ctrl-C alone would be killed outright on every restart and redeploy. The
+/// normalized Parquet is finalized on clean cancellation, so that kill would
+/// discard the analytical projection for the session — the raw JSONL survives,
+/// but it would have to be replayed to recover what was already computed. Both
+/// signals mean the same thing here: cancel, then let the recorder drain.
+#[cfg(unix)]
+async fn stop_requested() -> io::Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let mut terminate = signal(SignalKind::terminate())?;
+    tokio::select! {
+        _ = interrupt.recv() => Ok(()),
+        _ = terminate.recv() => Ok(()),
+    }
+}
+
+#[cfg(not(unix))]
+async fn stop_requested() -> io::Result<()> {
+    tokio::signal::ctrl_c().await
 }
 
 fn record_error(error: RecorderError) -> CliError {

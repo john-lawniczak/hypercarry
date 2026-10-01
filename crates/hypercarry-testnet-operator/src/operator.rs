@@ -5,11 +5,14 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use hypercarry_execution::{
-    ComprehensiveRiskPolicy, ExecutionError, FileJournal, FileKillSwitch, HyperliquidAssetResolver,
-    HyperliquidTestnetConfig, HyperliquidTestnetExecutor, HyperliquidTransport, KillSwitch,
-    MarketMetadata, MarketMetadataResolver, OrderState, RequestThrottle,
-    ReqwestHyperliquidTransport, RetryPolicy, RiskSnapshot, RiskSnapshotSource, SystemClock,
-    TESTNET_ACKNOWLEDGEMENT, TestnetAcknowledgement, TestnetReliability, ValidatedOrder,
+    ComprehensiveRiskPolicy, ExecutionError, FileJournal, FileKillSwitch, KillSwitch,
+    MarketMetadata, MarketMetadataResolver, OrderState, RequestThrottle, RetryPolicy, RiskSnapshot,
+    RiskSnapshotSource, ValidatedOrder,
+};
+use hypercarry_hyperliquid::{
+    HyperliquidAssetResolver, HyperliquidTestnetConfig, HyperliquidTestnetExecutor,
+    HyperliquidTransport, ReqwestHyperliquidTransport, SystemClock, TESTNET_ACKNOWLEDGEMENT,
+    TestnetAcknowledgement, TestnetReliability,
 };
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -254,7 +257,7 @@ fn execute_lifecycle(
     resolver: &ConfiguredMarket,
     policy: &OperatorPolicy,
     intent: &hypercarry_execution::OrderIntent,
-) -> Result<hypercarry_execution::LiveOrder> {
+) -> Result<hypercarry_hyperliquid::LiveOrder> {
     let mut live = executor.place(intent, resolver, policy)?;
     reconcile_while(
         executor,
@@ -288,7 +291,7 @@ fn finalize_session(
     config_sha256: String,
     started_at_ms: i64,
     executor: OperatorExecutor,
-    live: &hypercarry_execution::LiveOrder,
+    live: &hypercarry_hyperliquid::LiveOrder,
 ) -> Result<OperatorOutcome> {
     let final_state = live.state();
     let cumulative_filled = live.cumulative_filled();
@@ -337,16 +340,16 @@ fn finalize_session(
 
 fn reconcile_while<S, T, J, C, A, P>(
     executor: &mut HyperliquidTestnetExecutor<S, T, J, C, A>,
-    live: &mut hypercarry_execution::LiveOrder,
+    live: &mut hypercarry_hyperliquid::LiveOrder,
     max_attempts: u32,
     interval: std::time::Duration,
     predicate: P,
 ) -> Result<()>
 where
-    S: hypercarry_execution::HyperliquidL1Signer,
+    S: hypercarry_hyperliquid::HyperliquidL1Signer,
     T: HyperliquidTransport,
     J: hypercarry_execution::Journal,
-    C: hypercarry_execution::Clock,
+    C: hypercarry_hyperliquid::Clock,
     A: HyperliquidAssetResolver,
     P: Fn(OrderState) -> bool,
 {

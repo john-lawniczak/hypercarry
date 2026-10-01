@@ -1,0 +1,24 @@
+# Hourly settled-funding backfill for one coin.
+#
+#   systemctl enable --now hypercarry-backfill@BTC.timer
+#
+# Funding settles on the hour. This fires eight minutes past, leaving the venue
+# time to publish, with a short random spread so several coins do not issue
+# their requests in the same instant.
+
+[Unit]
+Description=Hourly Hypercarry settled-funding backfill (%i)
+Documentation=file:/usr/share/doc/hypercarry/deploy-README.md
+
+[Timer]
+OnCalendar=*-*-* *:08:00
+RandomizedDelaySec=120
+AccuracySec=30
+
+# Run once on boot if the host was down when a settlement was due. Combined with
+# the multi-day request window, an outage shorter than HYPERCARRY_BACKFILL_DAYS
+# repairs itself on the next run with no operator action.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

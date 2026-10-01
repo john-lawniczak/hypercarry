@@ -93,6 +93,7 @@ impl OrderIntent {
 
 /// Venue rules required to resolve an inert intent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarketMetadata {
     /// Venue this metadata applies to.
     pub venue: String,
@@ -144,6 +145,7 @@ impl MarketMetadata {
 
 /// Fully quantized order accepted by the shared adapter boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ValidatedOrder {
     /// Version of the execution value contract.
     pub schema_version: u32,
@@ -247,6 +249,8 @@ pub enum ExecutionMode {
     DryRun,
     /// Live testnet execution.
     Testnet,
+    /// Capability-gated live mainnet execution.
+    Mainnet,
 }
 
 /// Venue-neutral lifecycle observation.
@@ -332,7 +336,8 @@ pub struct ExecutionReport {
 }
 
 impl ExecutionReport {
-    pub(crate) fn empty(order: &ValidatedOrder, mode: ExecutionMode, state: OrderState) -> Self {
+    /// Constructs a report before fills or rejection details are attached.
+    pub fn empty(order: &ValidatedOrder, mode: ExecutionMode, state: OrderState) -> Self {
         Self {
             schema_version: EXECUTION_SCHEMA_VERSION,
             correlation_id: order.correlation_id.clone(),

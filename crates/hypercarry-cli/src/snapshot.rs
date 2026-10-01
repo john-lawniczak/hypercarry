@@ -4,8 +4,8 @@ use crate::{
 };
 use hypercarry_core::{
     info::{
-        FundingHistoryRequest, InfoClient, InfoClientError, InfoTransport, MetaAndAssetCtxsRequest,
-        PredictedFundingsRequest, ReqwestInfoTransport,
+        FundingHistoryPaginationError, InfoClient, InfoClientError, InfoTransport,
+        MetaAndAssetCtxsRequest, PredictedFundingsRequest, ReqwestInfoTransport,
     },
     types::{AssetSnapshot, FundingHistory, TimestampMs, VenuePredictionEntry},
 };
@@ -32,6 +32,7 @@ struct MarketSnapshot {
 
 pub fn configure_tracing(mode: TracingMode) -> Result<(), CliError> {
     tracing_subscriber::fmt()
+        .with_writer(io::stderr)
         .with_max_level(max_level(mode))
         .with_target(mode == TracingMode::Diagnostic)
         .try_init()
@@ -164,9 +165,18 @@ async fn fetch_market_snapshot<T: InfoTransport>(
             )
         })?;
     let funding_history = client
-        .execute(&FundingHistoryRequest::new(coin, start_time).with_end_time(end_time))
+        .funding_history_range(coin, start_time, end_time)
         .await
-        .map_err(|error| request_error(network, coin, "fundingHistory", error))?;
+        .map_err(|error| match error {
+            FundingHistoryPaginationError::Request(error) => {
+                request_error(network, coin, "fundingHistory", error)
+            }
+            error => CliError::with_source(
+                ErrorCategory::Schema,
+                format!("{network} fundingHistory response is invalid for coin {coin:?}"),
+                error,
+            ),
+        })?;
 
     Ok(MarketSnapshot {
         network,
@@ -414,6 +424,7 @@ mod tests {
     #[derive(Debug)]
     struct FixtureTransport {
         response_override: Option<&'static [u8]>,
+        history_override: Option<Vec<u8>>,
         requests: Mutex<Vec<Value>>,
     }
 
@@ -421,6 +432,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 response_override: None,
+                history_override: None,
                 requests: Mutex::new(Vec::new()),
             }
         }
@@ -428,6 +440,7 @@ mod tests {
         fn malformed() -> Self {
             Self {
                 response_override: Some(br#"{"unexpected":true}"#),
+                history_override: None,
                 requests: Mutex::new(Vec::new()),
             }
         }
@@ -450,8 +463,15 @@ mod tests {
             }
             let response = match body.get("type").and_then(Value::as_str) {
                 Some("fundingHistory") => {
-                    include_bytes!("../../hypercarry-core/tests/fixtures/funding_history.json")
-                        .as_slice()
+                    if let Some(history) = &self.history_override {
+                        return Ok(history.clone());
+                    }
+                    let end = body["endTime"].as_i64().expect("end time");
+                    return Ok(serde_json::to_vec(&serde_json::json!([
+                        {"coin":"BTC","fundingRate":"0.0001","premium":"0.00002","time":end - 7_200_000},
+                        {"coin":"BTC","fundingRate":"0.0002","premium":"0.00002","time":end - 3_600_000},
+                        {"coin":"BTC","fundingRate":"0.0003","premium":"0.00002","time":end}
+                    ]))?);
                 }
                 Some("metaAndAssetCtxs") => {
                     include_bytes!("../../hypercarry-core/tests/fixtures/meta_and_asset_ctxs.json")
@@ -580,6 +600,39 @@ mod tests {
         assert_eq!(error.category(), ErrorCategory::Schema);
         assert_eq!(error.exit_code(), 12);
         assert!(error.to_string().contains("metaAndAssetCtxs"));
+    }
+
+    #[test]
+    fn snapshot_rejects_wrong_coin_out_of_window_and_conflicting_history() {
+        let end = 1_700_000_000_000_i64;
+        let row = serde_json::json!({
+            "coin":"BTC", "fundingRate":"0.0001", "premium":"0.00002", "time":end
+        });
+        let mut wrong_coin = row.clone();
+        wrong_coin["coin"] = "ETH".into();
+        let mut future = row.clone();
+        future["time"] = (end + 1).into();
+        let mut stale = row.clone();
+        stale["time"] = (end - SNAPSHOT_WINDOW_MS - 1).into();
+        let mut conflicting = row.clone();
+        conflicting["fundingRate"] = "0.5".into();
+        for history in [
+            vec![wrong_coin],
+            vec![future],
+            vec![stale],
+            vec![row, conflicting],
+        ] {
+            let mut transport = FixtureTransport::new();
+            transport.history_override = Some(serde_json::to_vec(&history).unwrap());
+            let error = block_on(fetch_market_snapshot(
+                &InfoClient::new(transport),
+                "BTC",
+                TimestampMs::new(end),
+            ))
+            .expect_err("invalid history must fail closed");
+            assert_eq!(error.category(), ErrorCategory::Schema);
+            assert!(error.to_string().contains("fundingHistory"));
+        }
     }
 
     #[test]

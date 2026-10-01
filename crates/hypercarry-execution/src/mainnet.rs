@@ -276,7 +276,8 @@ impl MainnetReleaseEvidence {
 }
 
 /// Reviewed single-market canary and runtime thresholds.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MainnetReleaseConfig {
     /// Commit this configuration was reviewed against.
     pub source_commit: String,
@@ -285,8 +286,10 @@ pub struct MainnetReleaseConfig {
     /// The single allowlisted `venue:market` entry.
     pub allowed_market: String,
     /// Active canary notional ceiling.
+    #[serde(with = "rust_decimal::serde::str")]
     pub canary_notional_limit: Decimal,
     /// Reviewed maximum the canary limit may not exceed.
+    #[serde(with = "rust_decimal::serde::str")]
     pub reviewed_max_canary_notional: Decimal,
     /// Key identifier expected for the signer.
     pub testnet_key_id: String,
@@ -302,6 +305,9 @@ pub struct MainnetReleaseConfig {
     pub max_private_latency_ms: u64,
     /// Time-to-live for a single order authorization, milliseconds.
     pub authorization_ttl_ms: u64,
+    /// Digest of the complete venue/executor configuration, required by the mainnet adapter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration_config_digest: Option<String>,
 }
 
 impl MainnetReleaseConfig {
@@ -312,6 +318,9 @@ impl MainnetReleaseConfig {
     /// Returns an error for an invalid market/key/revision identity, non-low
     /// canary, or non-positive health/latency bounds.
     pub fn validate(&self) -> Result<(), ExecutionError> {
+        if let Some(digest) = &self.integration_config_digest {
+            validate_digest(digest)?;
+        }
         validate_exact_commit(&self.source_commit)?;
         validate_digest(&self.cargo_lock_digest)?;
         if self.allowed_market.trim().is_empty() || !self.allowed_market.contains(':') {
@@ -363,6 +372,8 @@ impl MainnetReleaseConfig {
             max_rest_latency_ms: u64,
             max_private_latency_ms: u64,
             authorization_ttl_ms: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            integration_config_digest: &'a Option<String>,
         }
 
         let encoded = serde_json::to_vec(&ReviewPayload {
@@ -378,6 +389,7 @@ impl MainnetReleaseConfig {
             max_rest_latency_ms: self.max_rest_latency_ms,
             max_private_latency_ms: self.max_private_latency_ms,
             authorization_ttl_ms: self.authorization_ttl_ms,
+            integration_config_digest: &self.integration_config_digest,
         })
         .map_err(|_| gate_error("cannot serialize reviewed mainnet configuration"))?;
         Ok(hex_digest(&encoded))
@@ -385,7 +397,8 @@ impl MainnetReleaseConfig {
 }
 
 /// Startup and continuous operational state sampled before every authorization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Readiness {
     /// The checked subsystem is ready.
     Ready,
@@ -394,7 +407,8 @@ pub enum Readiness {
 }
 
 /// Startup and continuous operational state sampled before every authorization.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationalHealth {
     /// Time the snapshot was observed, unix milliseconds.
     pub observed_at_ms: i64,
@@ -496,7 +510,15 @@ impl DeadManSwitch for FileDeadManSwitch {
     }
 }
 
-/// Unforgeable result required by any future mainnet adapter.
+/// Single-use result required by the mainnet adapter.
+///
+/// ```compile_fail
+/// use hypercarry_execution::MainnetAuthorization;
+/// fn cannot_reuse(token: MainnetAuthorization) {
+///     let _ = token.into_order(1000);
+///     let _ = token.into_order(1000);
+/// }
+/// ```
 #[derive(Debug)]
 pub struct MainnetAuthorization {
     order: ValidatedOrder,
@@ -600,10 +622,82 @@ where
         &self,
         order: &ValidatedOrder,
         now_ms: i64,
+        enable: ExplicitMainnetEnable,
+        confirmation: InteractiveMainnetConfirmation,
+        signer: &S,
+    ) -> Result<MainnetAuthorization, ExecutionError> {
+        self.authorize_with_clock(order, || Ok(now_ms), enable, confirmation, signer)
+    }
+
+    /// Authorizes using a clock sampled after potentially blocking health I/O.
+    ///
+    /// # Errors
+    /// Returns an error for failed gates or an unavailable clock.
+    pub fn authorize_with_clock<S: Signer>(
+        &self,
+        order: &ValidatedOrder,
+        clock: impl Fn() -> Result<i64, ExecutionError>,
         _enable: ExplicitMainnetEnable,
         _confirmation: InteractiveMainnetConfirmation,
         signer: &S,
     ) -> Result<MainnetAuthorization, ExecutionError> {
+        let now_ms = self.check_submission(order, clock, signer)?;
+        let ttl_ms = i64::try_from(self.config.authorization_ttl_ms)
+            .map_err(|_| gate_error("mainnet authorization TTL exceeds i64"))?;
+        let expires_at_ms = now_ms
+            .checked_add(ttl_ms)
+            .ok_or_else(|| gate_error("mainnet authorization expiry overflow"))?;
+        Ok(MainnetAuthorization {
+            order: order.clone(),
+            market: format!("{}:{}", order.venue, order.market),
+            max_notional: self.config.canary_notional_limit,
+            config_revision: self.config.config_revision.clone(),
+            evidence_digest: self.evidence.evidence_digest()?,
+            authorized_at_ms: now_ms,
+            expires_at_ms,
+        })
+    }
+    /// Rechecks an exact consumed order against the same release bundle and
+    /// current credentials, reconciliation, health and dead-man state.
+    /// The adapter must separately enforce the consumed capability's expiry.
+    ///
+    /// # Errors
+    /// Returns an error for a different bundle or any failed continuous gate.
+    pub fn recheck_submission<S: Signer>(
+        &self,
+        order: &ValidatedOrder,
+        evidence_digest: &str,
+        now_ms: i64,
+        signer: &S,
+    ) -> Result<(), ExecutionError> {
+        self.recheck_submission_with_clock(order, evidence_digest, || Ok(now_ms), signer)
+    }
+
+    /// Rechecks continuous gates with a clock sampled after health I/O.
+    ///
+    /// # Errors
+    /// Returns an error for a different bundle or failed runtime gates.
+    pub fn recheck_submission_with_clock<S: Signer>(
+        &self,
+        order: &ValidatedOrder,
+        evidence_digest: &str,
+        clock: impl Fn() -> Result<i64, ExecutionError>,
+        signer: &S,
+    ) -> Result<(), ExecutionError> {
+        if self.evidence.evidence_digest()? != evidence_digest {
+            return Err(gate_error(
+                "authorization belongs to a different release bundle",
+            ));
+        }
+        self.check_submission(order, clock, signer).map(|_| ())
+    }
+
+    fn check_submission<S: Signer>(
+        &self,
+        order: &ValidatedOrder,
+        clock: impl Fn() -> Result<i64, ExecutionError>,
+        signer: &S,
+    ) -> Result<i64, ExecutionError> {
         order.validate()?;
         self.config.validate()?;
         self.evidence.validate()?;
@@ -637,24 +731,12 @@ where
             )));
         }
         let health = self.health.health()?;
+        let now_ms = clock()?;
         validate_health(&self.config, &health, now_ms)?;
         if !self.dead_man.is_armed(now_ms)? {
             return Err(gate_error("dead-man heartbeat is missing or stale"));
         }
-        let ttl_ms = i64::try_from(self.config.authorization_ttl_ms)
-            .map_err(|_| gate_error("mainnet authorization TTL exceeds i64"))?;
-        let expires_at_ms = now_ms
-            .checked_add(ttl_ms)
-            .ok_or_else(|| gate_error("mainnet authorization expiry overflow"))?;
-        Ok(MainnetAuthorization {
-            order: order.clone(),
-            market,
-            max_notional: self.config.canary_notional_limit,
-            config_revision: self.config.config_revision.clone(),
-            evidence_digest: self.evidence.evidence_digest()?,
-            authorized_at_ms: now_ms,
-            expires_at_ms,
-        })
+        Ok(now_ms)
     }
 }
 
@@ -928,6 +1010,66 @@ mod tests {
     }
 
     #[test]
+    fn authorization_samples_clock_after_blocking_health_checks() {
+        struct DelayedHealth<'a>(&'a Cell<i64>);
+        impl OperationalHealthSource for DelayedHealth<'_> {
+            fn health(&self) -> Result<OperationalHealth, ExecutionError> {
+                self.0.set(10_100);
+                Ok(healthy())
+            }
+        }
+        struct FreshDeadMan;
+        impl DeadManSwitch for FreshDeadMan {
+            fn is_armed(&self, now: i64) -> Result<bool, ExecutionError> {
+                Ok(now >= 10_100)
+            }
+        }
+        let clock = Cell::new(10_000);
+        let gate =
+            MainnetReleaseGate::new(config(), evidence(), DelayedHealth(&clock), FreshDeadMan)
+                .unwrap();
+        let token = gate
+            .authorize_with_clock(
+                &order("1", "100"),
+                || Ok(clock.get()),
+                ExplicitMainnetEnable::from_cli_flag(true).unwrap(),
+                InteractiveMainnetConfirmation::new(MAINNET_CONFIRMATION).unwrap(),
+                &mainnet_signer("provider/mainnet-key"),
+            )
+            .unwrap();
+        assert_eq!(token.authorized_at_ms(), 10_100);
+    }
+
+    #[test]
+    fn post_consumption_recheck_rejects_a_different_reviewed_bundle() {
+        let signer = mainnet_signer("provider/mainnet-key");
+        let original = gate(healthy(), DeadMan(true));
+        let token = authorize(&original, &signer, "1").unwrap();
+        let digest = token.evidence_digest().to_owned();
+        let order = token.into_order(10_101).unwrap();
+        let mut changed = evidence();
+        changed.reviewed_bundle.execution_security_review = "review/security-2".into();
+        changed.release_decision.evidence_digest = changed.evidence_digest().unwrap();
+        let other =
+            MainnetReleaseGate::new(config(), changed, Health(healthy()), DeadMan(true)).unwrap();
+        assert!(
+            original
+                .recheck_submission(&order, &digest, 10_101, &signer)
+                .is_err()
+        ); // fixture health aged beyond 100ms
+        assert!(
+            other
+                .recheck_submission(&order, &digest, 10_100, &signer)
+                .is_err()
+        );
+        assert!(
+            original
+                .recheck_submission(&order, &digest, 10_100, &signer)
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn filesystem_dead_man_requires_a_present_fresh_heartbeat() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("heartbeat");
@@ -983,6 +1125,7 @@ mod tests {
             max_rest_latency_ms: 500,
             max_private_latency_ms: 500,
             authorization_ttl_ms: 5_000,
+            integration_config_digest: None,
         }
     }
 

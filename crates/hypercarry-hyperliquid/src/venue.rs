@@ -1,11 +1,11 @@
-use crate::{
+use hypercarry_core::info::Network;
+use hypercarry_execution::{
     ClientOrderId, ExecutionError, ExecutionMode, ExecutionNetwork, ExecutionReport, Journal,
     JournalEvent, JournalEventKind, LifecycleTransition, MarketMetadataResolver, OrderIntent,
     OrderState, OrderStateMachine, RecoveryAction, Rejection, RequestThrottle, RetryPolicy,
     RiskDecision, RiskPolicy, Side, SubmissionFailure, ThrottleDecision, TransitionOutcome,
     ValidatedOrder,
 };
-use hypercarry_core::info::Network;
 use hypercarry_recorder::{
     HyperliquidWebSocketTransport, MarketConnection, MarketTransport,
     transport::{HyperliquidConnection, TransportMessage},
@@ -18,11 +18,25 @@ use std::{
     collections::BTreeSet,
     error::Error,
     fmt,
+    io::Read,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const TESTNET_API: &str = "https://api.hyperliquid-testnet.xyz";
 const MAX_RESPONSE_BYTES: usize = 1_048_576;
+/// Venue rule: "The time must be at least 5 seconds after the current time."
+///
+/// Checked locally so an emergency arming fails here, with a clear reason,
+/// rather than being spent as one of a scarce daily budget on a rejection.
+const SCHEDULE_CANCEL_MIN_LEAD_MS: i64 = 5_000;
+/// Venue rule: "The max number of triggers per day is 10", reset at 00:00 UTC.
+///
+/// Not enforced here — the venue counts *triggers*, not arming calls, and this
+/// process cannot observe that count across restarts. It is stated so an
+/// operator sizing a re-arm interval knows the budget is small and shared.
+pub const SCHEDULE_CANCEL_MAX_TRIGGERS_PER_DAY: u32 = 10;
+/// Correlation identity for account-wide actions, which belong to no order.
+const ACCOUNT_CORRELATION_ID: &str = "account-emergency";
 
 /// Exact operator acknowledgement required to construct a testnet executor.
 pub const TESTNET_ACKNOWLEDGEMENT: &str = "I ACKNOWLEDGE HYPERCARRY TESTNET EXECUTION";
@@ -54,6 +68,7 @@ pub struct HyperliquidTestnetConfig {
     authorized_signer_address: String,
     action_ttl_ms: u64,
     _acknowledgement: TestnetAcknowledgement,
+    network: ExecutionNetwork,
 }
 
 impl HyperliquidTestnetConfig {
@@ -80,6 +95,7 @@ impl HyperliquidTestnetConfig {
             account_address,
             action_ttl_ms,
             _acknowledgement: acknowledgement,
+            network: ExecutionNetwork::Testnet,
         })
     }
 
@@ -339,6 +355,7 @@ pub trait HyperliquidTransport {
 /// Bounded blocking HTTPS transport for the official testnet endpoint only.
 pub struct ReqwestHyperliquidTransport {
     client: Client,
+    endpoint: &'static str,
 }
 
 impl ReqwestHyperliquidTransport {
@@ -357,13 +374,17 @@ impl ReqwestHyperliquidTransport {
             ));
         }
         let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(connect_timeout)
             .timeout(request_timeout)
             .build()
             .map_err(|_| {
                 ExecutionError::Transport("could not construct HTTPS client".to_owned())
             })?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            endpoint: TESTNET_API,
+        })
     }
 
     fn post(
@@ -374,7 +395,7 @@ impl ReqwestHyperliquidTransport {
     ) -> Result<Value, TransportFailure> {
         let result = self
             .client
-            .post(format!("{TESTNET_API}{path}"))
+            .post(format!("{}{path}", self.endpoint))
             .json(request)
             .send();
         let response = result.map_err(|error| TransportFailure {
@@ -406,11 +427,15 @@ impl ReqwestHyperliquidTransport {
                 status: Some(status.as_u16()),
             });
         }
-        let bytes = response.bytes().map_err(|_| TransportFailure {
-            classification: SubmissionFailure::UncertainAfterWrite,
-            operation,
-            status: Some(status.as_u16()),
-        })?;
+        let mut bytes = Vec::new();
+        response
+            .take((MAX_RESPONSE_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| TransportFailure {
+                classification: SubmissionFailure::UncertainAfterWrite,
+                operation,
+                status: Some(status.as_u16()),
+            })?;
         if bytes.len() > MAX_RESPONSE_BYTES {
             return Err(TransportFailure {
                 classification: SubmissionFailure::Permanent,
@@ -580,6 +605,7 @@ pub struct LiveOrder {
     machine: OrderStateMachine,
     seen_private_events: BTreeSet<String>,
     rejection: Option<Rejection>,
+    mode: ExecutionMode,
 }
 
 impl LiveOrder {
@@ -588,6 +614,7 @@ impl LiveOrder {
             machine,
             seen_private_events: BTreeSet::new(),
             rejection: None,
+            mode: ExecutionMode::Testnet,
         }
     }
 
@@ -629,6 +656,7 @@ impl LiveOrder {
             machine,
             seen_private_events,
             rejection,
+            mode: ExecutionMode::Testnet,
         })
     }
 
@@ -659,11 +687,8 @@ impl LiveOrder {
 
     /// Snapshot the current lifecycle as an execution report.
     pub fn report(&self) -> ExecutionReport {
-        let mut report = ExecutionReport::empty(
-            self.machine.order(),
-            ExecutionMode::Testnet,
-            self.machine.state(),
-        );
+        let mut report =
+            ExecutionReport::empty(self.machine.order(), self.mode, self.machine.state());
         report.rejection.clone_from(&self.rejection);
         report
     }
@@ -751,34 +776,50 @@ where
     {
         let metadata = metadata.resolve(&intent.venue, &intent.market)?;
         let order = ValidatedOrder::resolve(intent, &metadata)?;
-        let client_order_id = ClientOrderId::derive(&order)?;
-        let decision = policy.evaluate(&order)?;
+        self.place_validated(&order, policy, None, |_, _| Ok(()))
+    }
+
+    fn place_validated<P, G>(
+        &mut self,
+        order: &ValidatedOrder,
+        policy: &P,
+        deadline: Option<(i64, i64)>,
+        guard: G,
+    ) -> Result<LiveOrder, ExecutionError>
+    where
+        P: RiskPolicy,
+        G: Fn(&S, &C) -> Result<(), ExecutionError>,
+    {
+        order.validate()?;
+        let client_order_id = ClientOrderId::derive(order)?;
+        let decision = policy.evaluate(order)?;
         self.journal.append(
-            intent.created_at_ms,
-            &intent.correlation_id,
+            order.created_at_ms,
+            &order.correlation_id,
             decision.clone().into(),
         )?;
         let mut live = LiveOrder::new(OrderStateMachine::new(order.clone(), client_order_id));
+        live.mode = self.mode();
         if let RiskDecision::Reject { code, reason } = decision {
             live.rejection = Some(Rejection { code, reason });
             self.apply_transition(
                 &mut live,
                 OrderState::Rejected,
-                intent.created_at_ms,
+                order.created_at_ms,
                 None,
                 Decimal::ZERO,
             )?;
             return Ok(live);
         }
         self.journal.append(
-            intent.created_at_ms,
-            &intent.correlation_id,
+            order.created_at_ms,
+            &order.correlation_id,
             JournalEventKind::ExactAction {
-                mode: ExecutionMode::Testnet,
+                mode: self.mode(),
                 order: order.clone(),
             },
         )?;
-        let asset = self.assets.asset_id(&order)?;
+        let asset = self.assets.asset_id(order)?;
         let action = HyperliquidAction::Order(OrderAction {
             kind: "order",
             orders: vec![OrderWire {
@@ -792,6 +833,7 @@ where
             }],
             grouping: "na",
         });
+        guard(&self.signer, &self.clock)?;
         let (request, nonce) = self.signed_request(&action)?;
         // Signing can take an unbounded amount of wall-clock time (an
         // interactive external signer, a remote HSM round-trip). Re-check the
@@ -814,6 +856,12 @@ where
             self.apply_transition(&mut live, OrderState::Rejected, nonce, None, Decimal::ZERO)?;
             return Ok(live);
         }
+        guard(&self.signer, &self.clock)?;
+        if deadline.is_some() && matches!(policy.evaluate(order)?, RiskDecision::Reject { .. }) {
+            return Err(ExecutionError::Policy(
+                "risk policy changed before mainnet submission".into(),
+            ));
+        }
         self.apply_transition(
             &mut live,
             OrderState::SubmissionPending,
@@ -821,8 +869,27 @@ where
             None,
             Decimal::ZERO,
         )?;
+        if policy.kill_switch_engaged()? {
+            return Err(ExecutionError::Policy(
+                "kill switch engaged at submission boundary".into(),
+            ));
+        }
+        check_submission_deadline(&request, deadline, self.clock.now_ms()?)?;
         match self.transport.exchange(&request) {
-            Ok(response) => self.apply_placement_response(&mut live, nonce, &response)?,
+            Ok(response) => {
+                if let Err(error) = self.apply_placement_response(&mut live, nonce, &response) {
+                    if live.state() == OrderState::SubmissionPending {
+                        self.apply_transition(
+                            &mut live,
+                            OrderState::SubmissionUncertain,
+                            nonce,
+                            None,
+                            Decimal::ZERO,
+                        )?;
+                    }
+                    return Err(error);
+                }
+            }
             Err(failure) => self.handle_submission_failure(&mut live, nonce, &failure)?,
         }
         Ok(live)
@@ -897,6 +964,93 @@ where
         Ok(())
     }
 
+    /// Arms or disarms the venue-side dead man's switch.
+    ///
+    /// This is the only emergency response that survives the loss of this host.
+    /// A local watchdog can act only while something local still runs; if the
+    /// instance is terminated, partitioned, or wedged, the cancellation it was
+    /// supposed to perform simply never happens. Arming this leaves the
+    /// instruction *with the venue*, which carries it out on its own schedule
+    /// whether or not anything here is still alive. That is what makes an
+    /// emergency response independently effective rather than merely present.
+    ///
+    /// It cancels **open orders. It does not close positions.** An account
+    /// holding a filled carry leg is still fully exposed after this fires, so
+    /// "no open orders" and "flat" are different claims and the recovery
+    /// procedure must check them separately.
+    ///
+    /// Pass `None` to disarm. Callers re-arm on a timer well inside the chosen
+    /// horizon; the switch is a deadline the host must keep pushing back, so
+    /// ceasing to run is what triggers it. Each *trigger* consumes one of
+    /// [`SCHEDULE_CANCEL_MAX_TRIGGERS_PER_DAY`]; re-arming does not.
+    ///
+    /// Success means the venue acknowledged the arming. Any other outcome —
+    /// including a write whose result is unknown — is reported as an error,
+    /// because believing protection is in place when it is not is the failure
+    /// this mechanism exists to prevent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a deadline under five seconds away, a clock fault,
+    /// signing or journal failure, venue rejection, or a transport outcome that
+    /// leaves the armed state unknown.
+    pub fn schedule_cancel(&mut self, at_ms: Option<i64>) -> Result<(), ExecutionError> {
+        let time = at_ms
+            .map(|at| {
+                let now = self.clock.now_ms()?;
+                let lead = at.checked_sub(now).ok_or_else(|| {
+                    ExecutionError::Validation("scheduled cancel time overflows".to_owned())
+                })?;
+                if lead < SCHEDULE_CANCEL_MIN_LEAD_MS {
+                    return Err(ExecutionError::Validation(format!(
+                        "scheduled cancel must be at least {SCHEDULE_CANCEL_MIN_LEAD_MS}ms ahead; got {lead}ms"
+                    )));
+                }
+                u64::try_from(at).map_err(|_| {
+                    ExecutionError::Validation("scheduled cancel time is negative".to_owned())
+                })
+            })
+            .transpose()?;
+
+        let action = HyperliquidAction::ScheduleCancel(ScheduleCancelAction {
+            kind: "scheduleCancel",
+            time,
+        });
+        let (request, _) = self.signed_request(&action)?;
+
+        match self.transport.exchange(&request) {
+            Ok(response) => {
+                if let Some(reason) = exchange_error(&response)? {
+                    return Err(ExecutionError::Transport(format!(
+                        "scheduled cancel rejected: {reason}"
+                    )));
+                }
+            }
+            Err(failure)
+                if matches!(
+                    failure.classification,
+                    SubmissionFailure::UncertainAfterWrite
+                ) =>
+            {
+                // The venue may or may not have armed it. Reporting success
+                // here would be the exact lie this mechanism guards against.
+                return Err(ExecutionError::Reliability(
+                    "scheduled cancel state is unknown after an uncertain write; re-arm before relying on it".to_owned(),
+                ));
+            }
+            Err(failure) => return Err(transport_error(&failure)),
+        }
+
+        // Journaled only now, so the record never overstates protection.
+        let recorded_at = self.clock.now_ms()?;
+        self.journal.append(
+            recorded_at,
+            ACCOUNT_CORRELATION_ID,
+            JournalEventKind::EmergencyCancelScheduled { at_ms },
+        )?;
+        Ok(())
+    }
+
     /// Reconciles one managed order through REST by client order ID.
     ///
     /// # Errors
@@ -914,6 +1068,10 @@ where
             .transport
             .info(&request)
             .map_err(|failure| transport_error(&failure))?;
+        #[cfg(feature = "mainnet-execution")]
+        if self.config.network == ExecutionNetwork::Mainnet {
+            mainnet::validate_status_identity(&response, live)?;
+        }
         let Some(status) = parse_order_status(&response, live.order().quantity)? else {
             if live.state() == OrderState::SubmissionUncertain {
                 return Ok(());
@@ -1012,6 +1170,13 @@ where
         (self.transport, self.journal)
     }
 
+    fn mode(&self) -> ExecutionMode {
+        match self.config.network {
+            ExecutionNetwork::Testnet => ExecutionMode::Testnet,
+            ExecutionNetwork::Mainnet => ExecutionMode::Mainnet,
+        }
+    }
+
     fn signed_request(
         &mut self,
         action: &HyperliquidAction,
@@ -1024,7 +1189,7 @@ where
             })?)
             .ok_or_else(|| ExecutionError::Reliability("action expiry overflow".to_owned()))?;
         let request = HyperliquidSigningRequest {
-            network: ExecutionNetwork::Testnet,
+            network: self.config.network,
             nonce: u64::try_from(nonce)
                 .map_err(|_| ExecutionError::Reliability("nonce is negative".to_owned()))?,
             expires_after: u64::try_from(expires_after)
@@ -1038,6 +1203,16 @@ where
             ))
         })?;
         validate_signed_request(&signed, &request)?;
+        #[cfg(feature = "mainnet-execution")]
+        if self.config.network == ExecutionNetwork::Mainnet {
+            mainnet::verify_mainnet_signature(&signed, &request, self.signer.signer_address())?;
+        }
+        let after_signing = self.clock.now_ms()?;
+        if after_signing < 0 || after_signing > expires_after {
+            return Err(ExecutionError::Reliability(
+                "signed action expired or clock moved backwards".to_owned(),
+            ));
+        }
         Ok((signed, nonce))
     }
 
@@ -1307,6 +1482,19 @@ fn parse_user_fills(fills: &[Value]) -> Result<Vec<PrivateEvent>, ExecutionError
 enum HyperliquidAction {
     Order(OrderAction),
     Cancel(CancelAction),
+    ScheduleCancel(ScheduleCancelAction),
+}
+
+/// Wire form of the venue-side dead man's switch.
+///
+/// `time` is omitted entirely to disarm, which is what the venue reads as
+/// "remove the scheduled cancel" — a null would not mean the same thing.
+#[derive(Debug, Serialize)]
+struct ScheduleCancelAction {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1687,10 +1875,27 @@ fn venue_schema(message: impl Into<String>) -> ExecutionError {
     ExecutionError::Transport(message.into())
 }
 
+fn check_submission_deadline(
+    request: &Value,
+    deadline: Option<(i64, i64)>,
+    now: i64,
+) -> Result<(), ExecutionError> {
+    if deadline.is_some_and(|(issued, expiry)| now < issued || now > expiry)
+        || u64::try_from(now).ok().is_none_or(|now| {
+            request["expiresAfter"]
+                .as_u64()
+                .is_none_or(|expiry| now > expiry)
+        })
+    {
+        return Err(ExecutionError::Policy("submission deadline elapsed".into()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{InMemoryJournal, MarketMetadata};
+    use hypercarry_execution::{InMemoryJournal, MarketMetadata};
     use std::{cell::Cell, collections::VecDeque, convert::Infallible, rc::Rc};
 
     struct Resolver;
@@ -1874,6 +2079,128 @@ mod tests {
         assert!(recovered.seen_private_events.contains("fill:7"));
     }
 
+    /// The clock the fixture executor starts from; each read advances it by 1ms.
+    const FIXTURE_NOW_MS: i64 = 10_000;
+
+    fn schedule_cancel_ok() -> Value {
+        json!({"status": "ok", "response": {"type": "default"}})
+    }
+
+    /// Exactly the action documented by the venue: `scheduleCancel` with a
+    /// millisecond `time`. A wrong field name here would be accepted by the
+    /// signer, submitted, and rejected — after spending an emergency window.
+    #[test]
+    fn arming_sends_the_documented_action_and_journals_it_after_the_venue_confirms() {
+        let calls = Rc::new(Cell::new(0));
+        let mut transport = ScriptedTransport::default();
+        transport.exchange.push_back(Ok(schedule_cancel_ok()));
+        let mut executor = executor(transport, calls);
+        let deadline = FIXTURE_NOW_MS + 60_000;
+
+        executor.schedule_cancel(Some(deadline)).unwrap();
+
+        let (transport, journal) = executor.into_parts();
+        assert_eq!(
+            transport.exchange_requests[0]["action"],
+            json!({"type": "scheduleCancel", "time": deadline})
+        );
+        assert_eq!(
+            journal
+                .events
+                .iter()
+                .filter_map(|event| match &event.event {
+                    JournalEventKind::EmergencyCancelScheduled { at_ms } => Some(*at_ms),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![Some(deadline)]
+        );
+    }
+
+    /// The venue reads an absent `time` as "remove the scheduled cancel". A
+    /// serialized `null` is a different message and would not disarm.
+    #[test]
+    fn disarming_omits_the_time_field_rather_than_sending_null() {
+        let calls = Rc::new(Cell::new(0));
+        let mut transport = ScriptedTransport::default();
+        transport.exchange.push_back(Ok(schedule_cancel_ok()));
+        let mut executor = executor(transport, calls);
+
+        executor.schedule_cancel(None).unwrap();
+
+        let (transport, journal) = executor.into_parts();
+        let action = &transport.exchange_requests[0]["action"];
+        assert_eq!(*action, json!({"type": "scheduleCancel"}));
+        assert!(action.get("time").is_none());
+        assert!(journal.events.iter().any(|event| matches!(
+            event.event,
+            JournalEventKind::EmergencyCancelScheduled { at_ms: None }
+        )));
+    }
+
+    /// The venue requires at least five seconds of lead. Rejecting locally
+    /// keeps a too-late arming from consuming a request during an emergency.
+    #[test]
+    fn a_deadline_inside_the_venue_minimum_is_refused_without_submitting() {
+        let calls = Rc::new(Cell::new(0));
+        let mut executor = executor(ScriptedTransport::default(), calls);
+
+        let error = executor
+            .schedule_cancel(Some(FIXTURE_NOW_MS + SCHEDULE_CANCEL_MIN_LEAD_MS - 1))
+            .expect_err("a deadline under the venue minimum must be refused");
+
+        assert!(matches!(error, ExecutionError::Validation(_)));
+        let (transport, journal) = executor.into_parts();
+        assert!(transport.exchange_requests.is_empty());
+        assert!(journal.events.is_empty());
+    }
+
+    /// Believing the switch is armed when it is not is the failure this
+    /// mechanism exists to prevent, so an unknown outcome is never success.
+    #[test]
+    fn an_uncertain_write_reports_unknown_state_and_records_no_protection() {
+        let calls = Rc::new(Cell::new(0));
+        let mut transport = ScriptedTransport::default();
+        transport.exchange.push_back(Err(TransportFailure {
+            classification: SubmissionFailure::UncertainAfterWrite,
+            operation: "exchange",
+            status: None,
+        }));
+        let mut executor = executor(transport, calls);
+
+        let error = executor
+            .schedule_cancel(Some(FIXTURE_NOW_MS + 60_000))
+            .expect_err("an uncertain write must not report success");
+
+        assert!(matches!(error, ExecutionError::Reliability(_)));
+        let (_, journal) = executor.into_parts();
+        assert!(!journal.events.iter().any(|event| matches!(
+            event.event,
+            JournalEventKind::EmergencyCancelScheduled { .. }
+        )));
+    }
+
+    #[test]
+    fn a_venue_rejection_records_no_protection() {
+        let calls = Rc::new(Cell::new(0));
+        let mut transport = ScriptedTransport::default();
+        transport.exchange.push_back(Ok(
+            json!({"status": "err", "response": "too many triggers"}),
+        ));
+        let mut executor = executor(transport, calls);
+
+        let error = executor
+            .schedule_cancel(Some(FIXTURE_NOW_MS + 60_000))
+            .expect_err("a rejected arming must not report success");
+
+        assert!(matches!(error, ExecutionError::Transport(_)));
+        let (_, journal) = executor.into_parts();
+        assert!(!journal.events.iter().any(|event| matches!(
+            event.event,
+            JournalEventKind::EmergencyCancelScheduled { .. }
+        )));
+    }
+
     #[test]
     fn uncertain_submission_reconciles_before_returning() {
         let calls = Rc::new(Cell::new(0));
@@ -1972,7 +2299,7 @@ mod tests {
             event_id: "fill:race".to_owned(),
             venue_order_id: 42,
             quantity: dec("1"),
-            occurred_at_ms: 10_004,
+            occurred_at_ms: executor.clock.now_ms().unwrap(),
         };
         executor.apply_private_event(&mut live, &fill).unwrap();
 
@@ -2259,3 +2586,6 @@ mod tests {
         value.parse().unwrap()
     }
 }
+
+#[cfg(feature = "mainnet-execution")]
+pub mod mainnet;

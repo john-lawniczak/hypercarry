@@ -12,6 +12,7 @@ const COINS_ENV: &str = "HYPERCARRY_COINS";
 const OUTPUT_ENV: &str = "HYPERCARRY_OUTPUT";
 const TRACING_ENV: &str = "HYPERCARRY_TRACING";
 const DATASET_ENV: &str = "HYPERCARRY_DATASET";
+const TRADE_ENV: &str = "HYPERCARRY_TRADE";
 const DAYS_ENV: &str = "HYPERCARRY_DAYS";
 const QUEUE_CAPACITY_ENV: &str = "HYPERCARRY_QUEUE_CAPACITY";
 const CAPTURE_ENV: &str = "HYPERCARRY_CAPTURE";
@@ -104,6 +105,26 @@ pub struct AprOptions {
 }
 
 #[derive(Debug, Default)]
+pub struct PnlOverrides {
+    pub network: Option<Network>,
+    pub coin: Option<String>,
+    pub dataset: Option<PathBuf>,
+    pub trade: Option<PathBuf>,
+    pub output: Option<OutputFormat>,
+    pub tracing: Option<TracingMode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PnlOptions {
+    pub network: Network,
+    pub coin: String,
+    pub dataset: PathBuf,
+    pub trade: PathBuf,
+    pub output: OutputFormat,
+    pub tracing: TracingMode,
+}
+
+#[derive(Debug, Default)]
 pub struct RecordOverrides {
     pub network: Option<Network>,
     pub coins: Option<Vec<String>>,
@@ -191,6 +212,7 @@ struct FileConfig {
     snapshot: SnapshotFileConfig,
     backfill: BackfillFileConfig,
     apr: AprFileConfig,
+    pnl: PnlFileConfig,
     record: RecordFileConfig,
     predict: PredictFileConfig,
     tui: TuiFileConfig,
@@ -222,6 +244,17 @@ struct AprFileConfig {
     network: Option<Network>,
     coin: Option<String>,
     dataset: Option<PathBuf>,
+    output: Option<OutputFormat>,
+    tracing: Option<TracingMode>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct PnlFileConfig {
+    network: Option<Network>,
+    coin: Option<String>,
+    dataset: Option<PathBuf>,
+    trade: Option<PathBuf>,
     output: Option<OutputFormat>,
     tracing: Option<TracingMode>,
 }
@@ -296,6 +329,17 @@ pub fn resolve_apr(
     let file = load_file_config(config_path.as_ref())?;
     let environment = read_apr_environment(environment)?;
     resolve_apr_layers(cli, environment, file.apr)
+}
+
+pub fn resolve_pnl(
+    cli_config_path: Option<PathBuf>,
+    cli: PnlOverrides,
+    environment: &impl Environment,
+) -> Result<PnlOptions, CliError> {
+    let config_path = cli_config_path.or_else(|| environment.get(CONFIG_ENV).map(PathBuf::from));
+    let file = load_file_config(config_path.as_ref())?;
+    let environment = read_pnl_environment(environment)?;
+    resolve_pnl_layers(cli, environment, file.pnl)
 }
 
 pub fn resolve_record(
@@ -410,6 +454,21 @@ fn read_apr_environment(environment: &impl Environment) -> Result<AprOverrides, 
         network: read_network_environment(environment)?,
         coin: env_string(environment, COIN_ENV)?,
         dataset: env_string(environment, DATASET_ENV)?.map(PathBuf::from),
+        output: env_string(environment, OUTPUT_ENV)?
+            .map(|value| parse_output(&value))
+            .transpose()?,
+        tracing: env_string(environment, TRACING_ENV)?
+            .map(|value| parse_tracing(&value))
+            .transpose()?,
+    })
+}
+
+fn read_pnl_environment(environment: &impl Environment) -> Result<PnlOverrides, CliError> {
+    Ok(PnlOverrides {
+        network: read_network_environment(environment)?,
+        coin: env_string(environment, COIN_ENV)?,
+        dataset: env_string(environment, DATASET_ENV)?.map(PathBuf::from),
+        trade: env_string(environment, TRADE_ENV)?.map(PathBuf::from),
         output: env_string(environment, OUTPUT_ENV)?
             .map(|value| parse_output(&value))
             .transpose()?,
@@ -693,6 +752,42 @@ fn resolve_apr_layers(
             .or(environment.dataset)
             .or(file.dataset)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_DATASET_PATH)),
+        output: cli
+            .output
+            .or(environment.output)
+            .or(file.output)
+            .unwrap_or(OutputFormat::Human),
+        tracing: cli
+            .tracing
+            .or(environment.tracing)
+            .or(file.tracing)
+            .unwrap_or(TracingMode::Normal),
+    })
+}
+
+fn resolve_pnl_layers(
+    cli: PnlOverrides,
+    environment: PnlOverrides,
+    file: PnlFileConfig,
+) -> Result<PnlOptions, CliError> {
+    Ok(PnlOptions {
+        network: required_network(cli.network, environment.network, file.network, "pnl")?,
+        coin: required_coin(cli.coin, environment.coin, file.coin, "pnl")?,
+        dataset: cli
+            .dataset
+            .or(environment.dataset)
+            .or(file.dataset)
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_DATASET_PATH)),
+        trade: cli
+            .trade
+            .or(environment.trade)
+            .or(file.trade)
+            .ok_or_else(|| {
+                CliError::new(
+                    ErrorCategory::Configuration,
+                    "pnl requires a trade document: pass --trade, set HYPERCARRY_TRADE, or set pnl.trade in the config file",
+                )
+            })?,
         output: cli
             .output
             .or(environment.output)

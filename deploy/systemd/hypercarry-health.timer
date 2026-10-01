@@ -1,0 +1,18 @@
+# Check health every hour, after the backfill timer has had time to run.
+
+[Unit]
+Description=Hourly Hypercarry recording health check
+Documentation=file:/usr/share/doc/hypercarry/deploy-README.md
+
+[Timer]
+# Backfill fires at :08 with up to 120s of spread; :20 leaves clear room.
+OnCalendar=*-*-* *:20:00
+AccuracySec=30
+
+# Deliberately NOT Persistent. A missed check is not worth replaying on boot —
+# the next hour's check reports current truth, and a catch-up run right after a
+# reboot would alert on a dataset that is about to be repaired anyway.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,9 @@
 # Testnet execution evidence
 
 This file is intentionally an evidence record, not a declaration of readiness.
+Build scopes and crate paths in dated entries refer to the recorded revision.
+The venue adapter moved to `hypercarry-hyperliquid` on 2026-09-06; this migration
+does not retroactively change or approve any historical evidence.
 
 ## Deterministic M8 evidence — 2026-08-26
 

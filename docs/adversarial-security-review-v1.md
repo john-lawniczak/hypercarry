@@ -1,11 +1,10 @@
 # Adversarial security review v1
 
-Date: 2026-09-03. Scope: Z-Before-OSS.md item 3 — arithmetic/overflow/truncation
-hunting across the Decimal-based financial calculations, and race-condition
-(TOCTOU) hunting across the order-execution pipeline and the testnet-operator/
-external-signer IPC protocol. This was a manual code review (not the `/plamen`
-pipeline, which targets on-chain Solidity/Move contracts and does not fit a
-Rust CLI with no deployed contract).
+Date: 2026-09-03. Scope: arithmetic/overflow/truncation hunting across the
+Decimal-based financial calculations, and race-condition (TOCTOU) hunting
+across the order-execution pipeline and the testnet-operator/external-signer
+IPC protocol. This was a scoped manual review of the Rust application and
+signer code.
 
 Method: three independent deep-dive passes — Decimal arithmetic, execution-
 pipeline TOCTOU, and IPC/process-lifecycle races — each given the relevant
@@ -14,6 +13,23 @@ restate. Every finding below was re-verified against the actual source before
 being acted on. Four findings were fixed in this pass; the rest are recorded
 as a scoped follow-up backlog with reasoning for why they were not folded in
 here.
+
+## Scope after the mainnet integration
+
+This is a historical review of the code as it existed on 2026-09-03. It does
+not cover the mainnet integration added in `db6fec4` on 2026-09-06, including
+the mainnet adapter, external-signer client, operational health source, build
+identity checks and manual executor. Nor does it cover the work added on
+2026-09-30: the venue-side scheduled cancel, the shared `hypercarry-mainnet-config`
+crate holding the reviewed configuration digest and the health-file contract,
+and `hypercarry-supervisor`. Those all require a separate execution security
+review before a mainnet release can be approved.
+
+Paths and test names below describe the reviewed revision. Venue-specific code
+subsequently moved from `crates/hypercarry-execution/src/hyperliquid.rs` to
+`crates/hypercarry-hyperliquid/src/venue.rs`; current integration behavior and
+remaining operational requirements are documented in
+[mainnet integration v1](mainnet-integration-v1.md).
 
 ## Findings fixed in this pass
 

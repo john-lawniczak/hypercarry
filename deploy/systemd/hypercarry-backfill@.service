@@ -1,0 +1,71 @@
+# Keep settled funding history current for one coin.
+#
+# This is the unit that matters. Settled funding — the series `apr`, `pnl` and
+# `predict` read — is written by `backfill` and by nothing else. The recorder
+# captures a different layer and is optional; this is not.
+#
+# Instance name is the exact coin symbol: hypercarry-backfill@BTC.service
+#
+# Each run re-requests HYPERCARRY_BACKFILL_DAYS of history and merges it.
+# Merging is idempotent and deduplicates on (network, venue, coin, settlement
+# time), so an overlapping run repairs gaps instead of duplicating rows, and a
+# conflicting rewrite of an existing settlement fails loudly rather than
+# silently winning.
+
+[Unit]
+Description=Hypercarry settled-funding backfill (%i)
+Documentation=file:/usr/share/doc/hypercarry/deploy-README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=hypercarry-alert@%n.service
+
+[Service]
+Type=oneshot
+User=hypercarry
+Group=hypercarry
+EnvironmentFile=/etc/hypercarry/hypercarry.env
+ExecStart=/usr/local/bin/hypercarry backfill \
+    --network ${HYPERCARRY_NETWORK} \
+    --coin %i \
+    --days ${HYPERCARRY_BACKFILL_DAYS} \
+    --dataset ${HYPERCARRY_DATASET} \
+    --output json \
+    --tracing normal
+
+# A settled-funding request is small. If it has not returned in five minutes the
+# venue or the network is unhealthy, and the next hourly run is the right retry.
+TimeoutStartSec=300
+
+# The venue rate-limits; a thundering retry makes an outage worse, and the next
+# hourly run recovers any gap within the self-healing window anyway.
+Restart=no
+
+# --- Sandbox -----------------------------------------------------------------
+# This host reads public market data and holds no credentials. The sandbox is
+# what keeps that true: the process cannot gain privilege, cannot write outside
+# the dataset, and cannot reach the network by any family but IP.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/hypercarry
+UMask=0077

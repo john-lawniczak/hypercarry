@@ -1,0 +1,22 @@
+[Unit]
+Description=Hypercarry reviewed mainnet signing boundary
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hypercarry-canary
+Group=hypercarry-canary
+UMask=0077
+ExecStart=/opt/hypercarry/bin/hypercarry-mainnet-signer --config /etc/hypercarry-canary/config.json --policy /etc/hypercarry-canary/services.json --evidence /etc/hypercarry-canary/release.json --enable-mainnet
+Restart=no
+TimeoutStopSec=65
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/hypercarry-canary
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

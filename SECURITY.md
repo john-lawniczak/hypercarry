@@ -5,10 +5,16 @@
 Hypercarry is pre-release software. Security fixes are applied to the latest
 revision of the `main` branch; no released version is currently supported.
 
-The shipped `hypercarry` CLI is read-only. Testnet execution is an optional,
-default-off library capability, and this repository does not currently contain
-a mainnet transport. Do not treat the project as approved for production
-trading.
+The shipped `hypercarry` CLI is read-only. Separate default-off adapters support
+testnet execution and release-gated mainnet execution. The mainnet adapter and
+manual executor are implemented, but production trading remains unapproved:
+independently reviewed testnet evidence, an execution security review, external
+operational services, and final release approval are still required. See the
+[release gate](docs/mainnet-release-gate-v1.md) and
+[integration runbook](docs/mainnet-integration-v1.md).
+
+The 2026-09-03 security review predates the mainnet integration and does not
+constitute a security review or approval of that new code.
 
 ## Reporting a vulnerability
 

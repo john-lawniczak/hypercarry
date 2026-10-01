@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "backend": "/opt/hypercarry/bin/prehash-provider",
+  "backend_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signer_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "watchdog_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "backend_timeout_ms": 2000,
+  "signer_state": "/var/lib/hypercarry-canary/signer-state.json",
+  "watchdog_state": "/var/lib/hypercarry-canary/watchdog-state.json",
+  "watchdog_interval_ms": 1000,
+  "rearm_interval_ms": 15000,
+  "cancel_horizon_ms": 60000,
+  "executor_lease": "/var/lib/hypercarry-canary/executor-lease.json",
+  "executor_lease_timeout_ms": 5000,
+  "emergency_min_price": "90000",
+  "emergency_max_price": "110000"
+}

@@ -3,9 +3,15 @@ resolver = "3"
 members = [
     "crates/hypercarry-core",
     "crates/hypercarry-cli",
+    "crates/hypercarry-mcp",
     "crates/hypercarry-recorder",
     "crates/hypercarry-storage",
     "crates/hypercarry-execution",
+    "crates/hypercarry-mainnet-config",
+    "crates/hypercarry-hyperliquid",
+    "crates/hypercarry-executor",
+    "crates/hypercarry-mainnet-services",
+    "crates/hypercarry-supervisor",
     "crates/hypercarry-testnet-operator",
 ]
 

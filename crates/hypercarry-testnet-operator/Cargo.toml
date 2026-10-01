@@ -21,7 +21,8 @@ anyhow.workspace = true
 alloy.workspace = true
 chrono.workspace = true
 clap.workspace = true
-hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution", features = ["testnet-execution"] }
+hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
+hypercarry-hyperliquid = { version = "=0.0.0", path = "../hypercarry-hyperliquid", features = ["testnet-execution"] }
 hypersdk.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true

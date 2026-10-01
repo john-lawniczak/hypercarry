@@ -1,10 +1,333 @@
 # Hypercarry development status
 
-Last reviewed: **2026-09-03**
+Last reviewed: **2026-10-01**
 
 This is the living engineering-status document for hypercarry. Update it when a
 capability lands, a milestone changes state, or a verification command changes.
-`README.md` describes the product, while `TODO.md` remains the detailed backlog.
+`README.md` describes the product. The public operational requirements are in
+[the release gate](docs/mainnet-release-gate-v1.md) and
+[the integration runbook](docs/mainnet-integration-v1.md).
+
+## Post-implementation audit of the operational services — 2026-10-01
+
+A skeptical review of the day's commits found four defects, all fixed here.
+
+The watchdog re-armed the venue-side scheduled cancel on **every** lease poll,
+so a reviewed cadence of 100ms–1s produced one exchange action and two agent
+authority checks per poll indefinitely. Venue actions are rate limited per
+address, so a long session would have spent the budget the emergency cancel
+itself depends on. Re-arming is now paced by a separate reviewed
+`rearm_interval_ms`, capped at a third of the cancel horizon, while the lease is
+still polled every interval. A heartbeat is written only while the armed
+deadline outlasts the executor's heartbeat timeout, so the file can never
+promise cover the venue has stopped holding. Both decisions are pure, unit
+tested predicates (`rearm_due`, `heartbeat_permitted`) rather than inline
+conditions. Confirming the venue's address action budget against the chosen
+cadence is now an explicit operational-review item.
+
+The emergency price collar was not checked against the reviewed price tick.
+`flatten_action` rejects an unquantized price, so an unaligned bound would have
+failed only while flattening a live position. The policy validator now refuses
+it at load.
+
+The MCP server annotated a pinned command's result with provenance keys without
+checking the result was a JSON object. An array or scalar would have panicked
+the server *after* the command ran — for `submit_reviewed_canary`, losing the
+report of a completed mainnet order. `process::run` now requires an object.
+
+The signer's socket cleanup used `?`, which could replace the reason the accept
+loop stopped — the reason an operator reconciles retained nonce state against.
+The loop's error now wins. The agent authority check also took a freshly built
+blocking HTTP client per call, starting a runtime thread and loading a root
+store twice per action on the emergency path; it now takes a shared client.
+
+Validation after the audit: **281 passed, zero failed, four opt-in live tests
+ignored**. Strict all-feature Clippy, formatting, release build and default-off
+build all pass.
+
+What this audit found but deliberately did not change: the venue's actual
+per-address action budget is still unverified against the chosen cadence; the
+ordering between the executor's own `recover` and a running watchdog is a
+runbook decision, since recovery starts no liveness lease and an armed watchdog
+reads that as executor loss; the lease and heartbeat files are fsynced on every
+renewal, which is write amplification the replication transport has to absorb
+rather than a code defect; and supervisor readiness refuses any venue history at
+the 2,000-record cap, which is correct but eventually unusable for a long-lived
+account. Three smaller MCP items remain open: protocol-version negotiation,
+canonicalizing storage paths that do not yet exist, and whether
+`get_dataset_health` should stay an alias of `get_funding_apr`.
+
+## Documentation and production handoff — 2026-10-01
+
+Refreshed the README and maintainer beginner/technical/Q&A guides for scoped MCP,
+external custody and independent recovery. `TODO.md` now separates provider
+implementation, service transport, unfinished supervisor observations, independent
+session evidence and release freeze/approval, with explicit acceptance criteria.
+The public description is “Hyperliquid funding recorder, predictor, and execution
+research tool”; changing the later public mirror's metadata remains deferred.
+Mainnet readiness stays closed. The validation figures below belong to the last
+implementation (`ff8404c`); documentation work does not create live evidence.
+
+## Operational failure-path verification — 2026-10-01
+
+Final review bounded backend stdout closure after process exit (including a
+provider leaving a pipe open), added real mainnet-domain signature recovery and
+wrong-identity/timeout fixtures using only a public deterministic test key, and
+rechecks lease/STOP after watchdog signing/venue I/O before renewing heartbeat.
+Emergency signing/submission also rechecks the agent-to-account binding without
+requiring the filled account to be flat. This prevents a reassigned agent from
+silently targeting a different account during recovery.
+
+Final workspace validation: **275 passed, zero failed, four opt-in live tests
+ignored**. All-feature strict Clippy and Rust 1.93 all-target/all-feature checks
+passed. Default-off check, release build, formatting, cached cargo-deny and
+supply-chain checks also passed; the final release build is repeated from the
+clean committed tree so its embedded source identity is usable for review.
+
+## Gated MCP execution — 2026-10-01
+
+The owner authorized read/write MCP with gated mainnet orders. `trade` is a
+separate explicit launch scope and requires `--enable-mainnet`. The operator's
+`approve-mcp` command displays the exact configured action, verifies static
+release/build evidence, and issues a 1..300-second private approval only after
+interactive confirmation. `run-approved` atomically consumes it, retains a
+non-overwritable claim and follows the existing live execution/recovery gates.
+MCP accepts only an approval ID, never another order, account, path or endpoint.
+The default analytics dependency graph remains free of signing code.
+
+Validation: targeted approval tests cover expiry, operation/evidence binding,
+replay and concurrent consumption. MCP subprocess tests verify real stdio
+handshake, local history, denied writes and explicit mainnet launch requirements.
+Mainnet readiness is still closed pending real provisioning, supervisor readiness
+and independent release evidence; permission to build does not establish those.
+
+## Scoped MCP analytics — 2026-10-01
+
+`hypercarry-mcp` provides an optional stdio MCP process, read-only by default.
+Read tools expose snapshots, history, APR/data health, carry evaluation and
+causal predictions. Explicit write scope enables bounded backfill and validated,
+non-overwriting trade records. Network/coin/path/executable restrictions are
+launch-time settings, enforced at tool discovery and dispatch. JSON envelopes
+preserve decimal strings, observation time, units, coverage, assumptions and
+provenance; prediction confidence explicitly means data completeness.
+
+Validation: 7 MCP tests pass, including real Parquet history/pagination gaps,
+read/write denial, path/network overrides, notification mutation refusal and
+child timeout/hash enforcement. Strict all-target MCP Clippy passes.
+See `docs/mcp-v1.md` for integration and scope contracts.
+
+## External operational services — 2026-10-01
+
+Implemented default-off `hypercarry-mainnet-services`: owner-only signer with
+mainnet-domain signature recovery, exact-order/emergency policy, hash-pinned
+external custody backend and durable nonce/one-canary reservation; independent
+watchdog with venue-acknowledged re-arming, executor-owned lease and bounded
+reduce-only IOC recovery followed by position verification. Policy/artifact
+identities bind through optional runtime fields; historical digests remain
+unchanged. `hypercarry-executor` now exposes its config/safety/signer library.
+See `docs/mainnet-services-v1.md` for provisioning and failure-domain limits.
+
+The service code and deployment templates exist; no production key backend,
+hosts, forwarding/replication or alert integration have been provisioned. The
+supervisor and independent evidence remain outstanding. User authorization to
+implement and allow mainnet orders is recorded in the conversation, not treated
+as fabricated testnet/release evidence. Release readiness remains closed.
+
+Validation: targeted executor/config/services tests and strict Clippy. No
+credentials loaded and no live orders or emergency actions submitted.
+
+## Order-frequency correction — 2026-10-01
+
+The supervisor now reads `historicalOrders` and counts each venue order ID once
+using its original submission timestamp and the risk policy's frequency window.
+Canceled/rejected/unfilled orders count; partial fills and status updates do not
+create submissions. Conflicting/future timestamps and saturated 2,000-record
+histories fail closed. Fill history is used only for realized P&L and also
+refuses a saturated response. Uncertain local attempts still require journal
+reconciliation; no readiness field was enabled by this correction.
+
+Validation: 12 supervisor tests passed, including duplicates, canceled/unfilled
+orders, inclusive boundaries, malformed timestamps, and truncated histories.
+
+## Mainnet integration implementation — 2026-09-06
+
+Implemented on the existing local review branch at the operator's request,
+while credentialed testnet evidence remains outstanding. This changes the
+previous build ordering, not the live release conditions.
+
+- Moved Hyperliquid-specific testnet code and SDK dependencies out of
+  `hypercarry-execution` into new `hypercarry-hyperliquid`, preserving the
+  testnet operator and its offline coverage. The analytics CLI still has no
+  execution or signing dependency.
+- Added the default-off mainnet facade with a private fixed-endpoint HTTPS
+  transport, exact consumed order authorization, live gate/risk/deadline checks,
+  SDK mainnet-domain signature recovery, durable uncertain outcomes and strict
+  reconciliation identity checks. Clock sampling happens after blocking health
+  I/O; expiry is checked again after the durable pre-submission journal write.
+- Added the separate non-published `hypercarry-executor`: canonical config digest,
+  offline static preflight, interactive one-shot canary and journal recovery.
+  It binds complete runtime config, compiled source/lock/binary identity and
+  journal account/release context, uses a protected external signer, checks live
+  account/asset data, handles shutdown and reports cumulative fills explicitly.
+- Documented the required external mainnet signer, independent private-stream
+  health supervisor, alert delivery and watchdog response. These services are
+  not supplied by the new binary and remain part of the release-readiness work.
+
+Verification: all-feature workspace tests (224 passed, four ignored), strict
+Clippy, formatting, all-feature release build, Rust 1.93 all-target/all-feature
+check, supply-chain policy and dependency audit passed. Default-off and
+separate testnet feature builds passed. The read-only CLI dependency tree
+contains no execution/venue adapter/SDK signing dependency. The two offline
+executor subprocess checks reject missing explicit enablement and incomplete
+review evidence before journal creation or any signing.
+
+Public testnet REST (all three info requests) and ten-second WebSocket smoke
+checks passed during this work. They do not count as credentialed testnet
+sessions. Mainnet placement was tested only with offline fixture transports
+and a public deterministic SDK test key. No real mainnet or testnet orders
+were submitted, no production approval was emitted, and no credentials were
+loaded. See [mainnet integration v1](docs/mainnet-integration-v1.md) for build,
+configuration, API migration, recovery behavior and deployment requirements.
+
+## Venue-side scheduled cancel — 2026-09-30
+
+`schedule_cancel` arms Hyperliquid's scheduled cancel through the adapter, on
+both the testnet executor and the mainnet facade. It exists because a host-local
+watchdog cannot be independently effective on its own: if the host is
+terminated, partitioned or wedged, the cancellation it was going to perform
+never happens. Arming leaves the instruction with the venue, which executes it
+regardless of this host's fate.
+
+It is deliberately not gated behind a `MainnetAuthorization`. That capability
+makes *adding* risk a single reviewed non-repeatable act; this only removes
+risk, and requiring permission to protect the account would withhold protection
+in exactly the conditions — unhealthy runtime, engaged kill switch, expired
+evidence — that call for it.
+
+**It cancels open orders and does not close positions.** An account holding a
+filled leg is still exposed after it fires, so the emergency response is
+incomplete without a separate reviewed flattening procedure.
+
+Venue rules are enforced or recorded, not assumed: a deadline under five seconds
+ahead is refused locally rather than spent as a rejected request, omitting the
+time disarms, and the ten-triggers-per-day budget is documented on the exported
+`SCHEDULE_CANCEL_MAX_TRIGGERS_PER_DAY` constant. Arming and disarming journal
+`emergency_cancel_scheduled` only after the venue confirms, so the journal never
+claims protection that is not in place; an uncertain write returns an error
+rather than success.
+
+## Account-health supervisor — 2026-09-30 (in progress)
+
+`hypercarry-supervisor` is the independent supervisor the integration runbook
+requires. It is the process that writes the health file the executor refuses to
+act without, and nothing else in this workspace produces that file.
+
+Two properties are structural rather than documented. It **holds no
+credentials**: the private `orderUpdates`/`userFills` subscriptions are unsigned
+and take an account address, and the REST info queries are address-scoped, so
+there is no key and no signing path. Its dependency tree contains zero
+occurrences of the SDK, the venue adapter or the signing stack — the executor's
+contains 141 — and it reads the clock from `std` rather than borrowing the venue
+adapter's, so the graph itself shows it cannot trade.
+
+It **never claims what it has not measured**. Every readiness field must be
+`ready` for the gate to authorize, so a field with no source behind it is
+written `not_ready` and the executor declines. That is what makes the partially
+built state safe: it withholds authorization rather than granting it on
+incomplete evidence. A test asserts that what this binary writes today
+authorizes nothing, so a field cannot start reporting ready without a source.
+
+Established now: flatness across **every** perp DEX — enumerated from
+`perpDexs`, where the default DEX is a literal `null` entry — which is the claim
+the executor cannot make for itself, since its own check covers the default DEX
+only and that does not establish flatness for a unified account. Also account
+equity, open order count and aggregate notional, reference mid price, and signed
+realized rolling `PnL` with its fill times, computed from `userFills` so it
+survives this process restarting.
+
+Still `not_ready`, each needing its own observed source: startup and continuous
+reconciliation against the durable journal, the private stream, alert delivery,
+the audit journal, and rollback. Supervisor settings live in their own
+configuration file and must never move into `RuntimeConfig`, whose serialization
+is the reviewed digest.
+
+## Shared mainnet runtime configuration — 2026-09-30
+
+`RuntimeConfig` and its reviewed digest moved out of the bin-only
+`hypercarry-executor` into a new `hypercarry-mainnet-config` library. The
+executor rejects a health file whose `integration_config_digest` differs from
+its own, so the independent supervisor that writes that file has to compute the
+identical value. The digest hashes the type's JSON serialization, which makes
+it sensitive to field order and serde attributes — two independent declarations
+of the same shape would agree until the day one of them gained a field. Holding
+the definition once removes that failure mode by construction.
+
+The new crate has no venue, signer or transport dependency and cannot trade. It
+deliberately does not carry the configuration envelope: `MainnetReleaseConfig`
+is gated behind `mainnet-execution`, so taking only the runtime section keeps
+the crate free of that gate and leaves the workspace's default-off build
+unchanged. The envelope and all execution policy — `validate`, `verify_build` —
+stay in the executor.
+
+The health file moved for the same reason, into a `health` module gated behind
+`mainnet-execution`. It is a wire contract between two processes and only the
+reader declared it: the supervisor that writes it would have matched the shape
+by hand, and a field added on one side would have compiled cleanly and then
+rejected every health file at runtime. `HealthEnvelope` now carries its own
+binding check — schema, network, account, digest, and the requirement that
+health and risk describe a single instant, so a stale half cannot hide behind a
+fresh one — plus an atomic owner-only write. The executor keeps what only it can
+do: re-reading at the authorization boundary, measuring its own live
+account-check latency, re-testing freshness after that I/O, and requiring the
+supervisor's `account_flat` claim.
+
+A pinned-digest test asserts that a fixed configuration hashes to the value
+captured before the move. Every reviewed release bundle records the digest it
+approved, so a field reorder would silently invalidate all of them at the moment
+an operator most needs the binding to hold; the test turns that into a failure.
+
+## Repository review and public mainnet verification — 2026-09-06
+
+Focused review of the read-only CLI, REST history validation, live recorder
+coverage, CI requirements, and execution-readiness documentation produced three
+improvements:
+
+1. Snapshot history now uses the existing validated, retry-aware range reader.
+   Wrong-coin, out-of-window, and conflicting settlement rows fail with schema
+   exit code 12; rows are sorted and identical overlaps collapse. Regression
+   coverage exercises each invalid case. The previous snapshot fixture itself
+   contained settlements outside its requested window; it now supplies bounded
+   synthetic history while retaining recorded context and prediction fixtures.
+2. CLI tracing explicitly writes to stderr, preserving the documented single
+   JSON document on stdout even with diagnostic tracing enabled.
+3. Public recorder smoke coverage now includes mainnet alongside testnet. Both
+   tests cancel after ten seconds and enforce a thirty-second outer deadline
+   covering recording and shutdown. They remain ignored in normal offline runs.
+
+Verification on this checkout:
+
+- `cargo test --workspace --all-features --locked`: 172 passed, zero failed,
+  four opt-in live tests ignored. Local Unix socket tests required execution
+  outside the filesystem sandbox.
+- `cargo fmt --all -- --check`, strict all-target/all-feature Clippy, the locked
+  all-feature release build, supply-chain deny-list check, and `cargo deny check`
+  passed. The dependency audit required access to its advisory database.
+- `cargo test -p hypercarry-core --test live_info mainnet_info_smoke --locked -- --ignored --nocapture`:
+  passed against public mainnet REST (context, predictions, BTC history).
+- `cargo test -p hypercarry-recorder --test live_recorder mainnet_live_recorder_smoke --locked -- --ignored --nocapture`:
+  passed; connected and received raw and normalized data during ten seconds.
+- Release CLI `snapshot --network mainnet --coin BTC --output json --tracing diagnostic`:
+  passed; stdout parsed as one JSON document with four BTC settlements inside
+  the reported window, while diagnostic logs appeared on stderr.
+
+Live checks required network access outside the sandbox. These results establish
+public market-data connectivity only, not trading readiness or sustained service
+reliability. No orders were submitted. At that review, mainnet execution remained unavailable. The subsequent
+integration work below supplies the adapter and binary; independent testnet
+reviews, operational services, security review and final release approval are
+still outstanding. This was a focused
+repository review, not a comprehensive security audit. Live output and datasets
+were kept outside version control.
 
 ## Product goal
 
@@ -16,7 +339,8 @@ present the results through a polished command-line and terminal interface.
 The default CLI is deliberately read-only. It does not accept private keys,
 sign requests, access a wallet, or place orders. The optional execution library
 can place testnet orders only through a caller-supplied external signer; it has
-no built-in key loader and no mainnet transport.
+no built-in key loader. The separate default-off mainnet integration is now
+implemented, but live release readiness remains closed.
 
 ## Status at a glance
 
@@ -44,7 +368,9 @@ transport.**
 | Execution safety | Complete | Comprehensive exact risk policy, filesystem kill switch, isolated network signer, durable client IDs, bounded retry/throttle, locked journal, and lifecycle recovery |
 | Testnet execution | Feature-gated, live candidate unreviewed | Official fixed HTTPS/WebSocket endpoints, pinned SDK signer, place/cancel, private events, REST reconciliation, restart recovery, non-shipping external-signer harness, and offline reviewer attestation; one clean credentialed candidate awaits independent human review |
 | Mainnet release gate | Implemented, closed | Default-off compile gate plus evidence digest, separate credentials, explicit/manual enablement, canary, continuous health/reconciliation, alerts/audit, rollback, and dead-man checks; required evidence is incomplete |
-| Mainnet transport | Absent | Deliberately deferred until credentialed testnet passes; its exact reviewed revision must then be bound into release evidence |
+| Mainnet integration | Implemented, default-off and unreleased | Exact-order manual/MCP-consent executor; isolated signer and emergency watchdog implemented; custody backend, independent hosts, supervisor completion and release evidence remain outstanding |
+| MCP analytics/local writes | Implemented, opt-in process | Read-only default; separate write scope; strict structured metadata, pinned executables and storage boundaries |
+| MCP trading | Implemented, gated | Explicit trade scope and mainnet flag; expiring one-use operator consent; same release/build/live gates |
 
 ## What works now
 
@@ -89,8 +415,11 @@ transport.**
 - `apr` scans the selected Parquet stream, chooses its latest deterministic
   settlement, and annualizes the hourly rate. Its operator view uses ISO-8601
   UTC, exact signed percentages and basis points, prominent network identity,
-  and a day count only for contiguous hourly observations; JSON schema v1 is
-  unchanged. Empty streams produce an actionable partial-data error.
+  and states how much of the history is unbroken, not just how much exists.
+  `contiguous_history_hours` measures the run ending at the newest observation
+  and is carried in JSON so a monitor can assert recent history is complete; an
+  old gap no longer erases the recent run. Empty streams produce an actionable
+  partial-data error.
 - `hypercarry-storage` defines and validates the settled-funding Parquet v1
   schema, deterministic identity `(network, venue, coin, settlement_time_ms)`,
   safe Hive partition path, exact decimal scale, and row-level provenance.
@@ -112,7 +441,11 @@ transport.**
 - `record --network <mainnet|testnet> --coins <COIN,...>` subscribes directly to
   Hyperliquid public `activeAssetCtx` and `l2Book` feeds without an exchange
   SDK. It applies a capped reconnect backoff, application heartbeats, stale
-  connection recycling, and a clean Ctrl-C close boundary.
+  connection recycling, and a clean close boundary on both `SIGINT` and
+  `SIGTERM`. A service manager stops a unit with `SIGTERM`, so listening for
+  Ctrl-C alone meant every supervised restart killed the recorder before the
+  session's normalized Parquet was finalized, discarding the analytical
+  projection and leaving only raw JSONL to replay.
 - Every WebSocket text frame is appended with network, session, connection,
   receive sequence, and receive timestamp before normalization. Disconnect and
   stale boundaries are captured alongside frames in raw JSONL schema v1.
@@ -249,8 +582,9 @@ It never edits the harness evidence and cannot itself establish that the human
 reviewer is organizationally independent. The current candidate has not yet
 been attested.
 
-M9 adds a separate default-off `mainnet-execution` release-gate module, but no
-mainnet transport. Schema-v2 evidence cryptographically binds repeated clean
+M9 originally added the separate default-off `mainnet-execution` release-gate
+module. The subsequent mainnet integration now supplies the adapter and binary;
+its operational release remains closed. Schema-v2 evidence cryptographically binds repeated clean
 sessions and their independent checks to the exact code/lock/config/transport,
 signer alias, dependency/security reviews, rollback record, and later human
 decision. It enforces explicit/manual enablement, one-market canary limits,
@@ -507,19 +841,77 @@ cargo test --workspace --all-features --locked
 cargo build --workspace --all-features --release --locked
 ```
 
-Current normal all-feature test result: **171 passed, 0 failed, 3 intentionally
-ignored**.
-The ignored tests are the opt-in mainnet/testnet REST checks and testnet live
-WebSocket recorder smoke check. All normal recorder/replay tests are offline.
+Current normal all-feature test result: **281 passed, 0 failed, 4 intentionally
+ignored** (includes executor and MCP subprocess integration checks).
+The ignored tests are the opt-in mainnet/testnet REST checks and mainnet/testnet
+live WebSocket recorder smoke checks. All normal recorder/replay tests are offline.
+
+## Carry P&L ledger
+
+`hypercarry-core`'s `carry` module values one carry trade — a perpetual leg plus
+an optional opposing spot hedge — over a sequence of settled funding
+observations, and reports funding accrual, per-leg price result, fees, and net.
+It closes a real gap: `predict` scored prediction error and `rolling_pnl` in
+`hypercarry-execution` is an input read from an external health file, so until
+now nothing in the workspace computed strategy return.
+
+The module is pure, offline, and exact. Every fund-affecting operation is
+checked, and the ledger fails closed on repeated or out-of-order settlements
+rather than double-counting funding. It deliberately does not invent a
+per-settlement valuation price: the caller supplies one, so a constant-notional
+approximation is visible at the call site instead of hidden in the arithmetic.
+
+The read-only `pnl` command replays the settled-funding Parquet dataset through
+it. The position is a schema-v1 trade document the operator records, not
+pipeline output, so the CLI gains no execution capability. Funding applies to
+settlements strictly after entry and at or before exit; `window_fully_covered`
+requires observations bracketing the window *and* an unbroken hourly sequence
+between them, because a settlement missing inside the window understates funding
+just as a missing endpoint does, and a span check cannot see it. It is reported
+for closed trades: an open position is never fully covered. The contract is
+documented in `docs/cli-contracts-v1.md`.
 
 ## Recommended next moves
 
-1. Have an independent human inspect the clean candidate artifacts and use the
+Track 1 (live purpose without execution) and Track 2 (release readiness) proceed
+in parallel; see `TODO.md`, whose "Start here" section carries the concrete next
+action. Funding settles hourly, so capturing carry does not require the
+executor, and automating execution is an efficiency project rather than the
+thing that makes the repository operationally live.
+
+Most remaining work is operator work: a host to run capture on, a human
+reviewer, and external services to provision. This section previously claimed
+that *no* code blocked any of it, which was too strong — preparing the
+deployment surfaced three code defects that did: the recorder was killed by a
+service manager's `SIGTERM` before finalizing its session, `apr` reported a
+contiguous-history duration only when the dataset was an exact multiple of 24
+records, and `pnl` called a window fully covered when a settlement inside it was
+missing. All three are fixed. The supervisor is the one remaining item that is
+still partly implementation; everything else is provisioning, evidence and
+approval.
+
+1. Install the recording host from `deploy/`, which packages the hourly
+   per-coin `backfill` timer, the freshness/contiguity/disk health check, the
+   on-failure alert hook and the optional recorder unit. Then record the first
+   manually executed carry position through the `pnl` ledger. This is the next
+   concrete action. Note that `backfill` is the only writer of settled funding;
+   `record` captures a separate, much larger layer and is not required for
+   carry P&L.
+2. Have an independent human inspect the clean candidate artifacts and use the
    offline `review` command to emit the first immutable reviewer attestation.
-2. Record two more independently reviewed clean credentialed sessions and run
+   Track 2 is blocked on this, not on implementation.
+3. Record two more independently reviewed clean credentialed sessions and run
    the documented disconnect, restart, private-stream, and fault exercises.
-3. Only after those sessions pass, implement and freeze the exact future
-   mainnet transport, then review the complete bundle before human approval.
+4. Finish `hypercarry-supervisor`: reconciliation against the durable journal
+   first, then the private stream, then whatever will attest alerts, audit and
+   rollback. Until each readiness field has an observed source it stays
+   `not_ready` and the executor declines, which is the intended behaviour.
+5. Provision and review the external mainnet signer and the watchdog driving the
+   emergency response; freeze the implemented adapter/executor and complete
+   release bundle after the testnet evidence passes, before human approval.
+6. Sync the public mirror with `tools/export-public.sh --push`. It has never
+   been synced; the dry run is clean and the two blockers identified before the
+   first sync (the `cargo deny` advisory and the README structure) are cleared.
 
 ## Keeping this file current
 
@@ -532,3 +924,15 @@ For every material pull request:
 4. Record new architectural or safety decisions in the relevant section.
 5. Keep planned behavior clearly separated from behavior that exists now.
 6. Update the “Last reviewed” date.
+
+`Z-Explainer.md` carries its own checklist for the structural claims it owns.
+Two mechanisms support both files rather than relying on memory:
+
+- `tools/hooks/pre-commit` blocks a commit that changes code without staging
+  this file, and one that changes structure without staging the explainer. It
+  prints the relevant checklist. Install with
+  `git config core.hooksPath tools/hooks`; bypass deliberately with
+  `SKIP_DOC_CHECK=1` for a work-in-progress commit you intend to amend.
+- `tools/check-docs-current.sh` reports how many commits have touched `crates/`
+  since each document was last updated, so a bypassed hook still leaves a
+  visible signal in CI and in a reviewer's terminal.

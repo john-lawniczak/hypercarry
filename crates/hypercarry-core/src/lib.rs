@@ -14,6 +14,7 @@
 
 #![warn(missing_docs)]
 
+pub mod carry;
 pub mod info;
 pub mod metrics;
 pub mod predictor;
