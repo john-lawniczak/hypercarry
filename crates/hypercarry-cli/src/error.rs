@@ -138,7 +138,7 @@ mod tests {
 
         for (category, expected) in categories {
             assert_eq!(category.exit_code(), expected);
-            assert!(!category.as_str().is_empty());
+            assert!(!category.as_str().is_empty(), "{category:?} has no name");
         }
     }
 }

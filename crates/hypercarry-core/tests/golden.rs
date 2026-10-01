@@ -52,7 +52,11 @@ fn parses_meta_and_asset_ctxs() {
     assert!(!meta.universe[2].only_isolated);
     assert_eq!(ctxs[2].premium, None);
     assert_eq!(ctxs[2].mid_px, None);
-    assert!(ctxs[2].impact_pxs.is_empty());
+    let impact_pxs = &ctxs[2].impact_pxs;
+    assert!(
+        impact_pxs.is_empty(),
+        "unexpected impact prices: {impact_pxs:?}"
+    );
     assert_eq!(ctxs[2].funding, dec("0.0"));
 }
 
