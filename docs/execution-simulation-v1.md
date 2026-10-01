@@ -69,3 +69,12 @@ M7 extends the file journal with process-independent writer locking and strict
 lifecycle recovery while preserving these v1 records. Its safety contracts are
 documented in `execution-safety-v1.md`. M8 remains the earliest milestone
 permitted to add testnet submission.
+
+## Mainnet journal extension
+
+The additive `mainnet` execution mode and `execution_context_bound` event are
+used only by the separate default-off mainnet executor. The event binds network,
+public account, runtime configuration digest, release evidence digest and signer
+alias before an action. Older readers must reject unknown events; do not replay
+mainnet journals with an older or testnet-only operator. The event contains no
+keys, signatures or signed requests. See [mainnet integration](mainnet-integration-v1.md).

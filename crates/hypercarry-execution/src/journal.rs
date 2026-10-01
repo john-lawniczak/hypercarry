@@ -29,6 +29,19 @@ pub struct JournalEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum JournalEventKind {
+    /// Binds a live executor journal to reviewed operational identity.
+    ExecutionContextBound {
+        /// Exact network of external effects.
+        network: crate::ExecutionNetwork,
+        /// Public trading account identity, never a credential.
+        account_id: String,
+        /// Digest of complete runtime configuration.
+        config_digest: String,
+        /// Digest of approved release evidence.
+        evidence_digest: String,
+        /// Non-secret pinned signer alias.
+        signer_key_id: String,
+    },
     /// Risk policy allowed the order.
     RiskAllowed,
     /// A structured risk decision was recorded.
@@ -73,6 +86,16 @@ pub enum JournalEventKind {
         source: String,
         /// Deduplication identity of the event.
         event_id: String,
+    },
+    /// A venue-side account-wide cancellation was armed or disarmed.
+    ///
+    /// Recorded only after the venue confirms it, so the journal never claims
+    /// protection that is not actually in place. Absence of this event is not
+    /// evidence that nothing is armed: a prior process may have armed it, which
+    /// is why recovery re-establishes the state rather than inferring it.
+    EmergencyCancelScheduled {
+        /// Unix milliseconds the venue will cancel at, or `None` to disarm.
+        at_ms: Option<i64>,
     },
 }
 
@@ -298,6 +321,33 @@ fn validate_record(record: &JournalEvent) -> Result<(), ExecutionError> {
             {
                 return Err(ExecutionError::JournalSchema(
                     "external event source/identity must be bounded and non-empty".to_owned(),
+                ));
+            }
+        }
+        JournalEventKind::ExecutionContextBound {
+            account_id,
+            config_digest,
+            evidence_digest,
+            signer_key_id,
+            ..
+        } => {
+            if account_id.is_empty()
+                || signer_key_id.is_empty()
+                || [config_digest, evidence_digest]
+                    .iter()
+                    .any(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return Err(ExecutionError::JournalSchema(
+                    "invalid execution context binding".into(),
+                ));
+            }
+        }
+        JournalEventKind::EmergencyCancelScheduled { at_ms } => {
+            // A pre-epoch deadline is a clock fault, and one already in the
+            // past would record protection that can never fire.
+            if at_ms.is_some_and(|at| at < 0) {
+                return Err(ExecutionError::JournalSchema(
+                    "scheduled cancel time must not precede the Unix epoch".to_owned(),
                 ));
             }
         }

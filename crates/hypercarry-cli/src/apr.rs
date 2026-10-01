@@ -25,6 +25,11 @@ struct AprView<'a> {
     funding_rate: String,
     funding_apr: String,
     available_observations: usize,
+    /// Unbroken hourly run ending at the newest observation.
+    ///
+    /// Exposed to automation because a monitor needs to assert that recent
+    /// history is complete, which `available_observations` alone cannot show.
+    contiguous_history_hours: usize,
     #[serde(skip)]
     settlement_time_iso: String,
     #[serde(skip)]
@@ -33,8 +38,6 @@ struct AprView<'a> {
     funding_rate_bps: String,
     #[serde(skip)]
     funding_apr_percent: String,
-    #[serde(skip)]
-    contiguous_history_days: Option<usize>,
 }
 
 pub fn run(options: &AprOptions) -> Result<(), CliError> {
@@ -97,7 +100,7 @@ fn read_latest_apr<'a>(
         funding_rate_percent: signed_scaled(latest.funding_rate, 100),
         funding_rate_bps: signed_scaled(latest.funding_rate, 10_000),
         funding_apr_percent: signed_scaled(apr, 100),
-        contiguous_history_days: contiguous_history_days(&records),
+        contiguous_history_hours: contiguous_history_hours(&records),
     })
 }
 
@@ -110,19 +113,25 @@ fn signed_scaled(value: Decimal, multiplier: i64) -> String {
     }
 }
 
-fn contiguous_history_days(records: &[SettledFundingRecord]) -> Option<usize> {
-    let days = records.len().checked_div(24)?;
-    if days == 0 || days * 24 != records.len() {
-        return None;
-    }
-    records
+/// Hours of unbroken hourly history ending at the newest observation.
+///
+/// Measured backwards from the newest record, because that is the run a current
+/// decision rests on: a gap in old history says nothing about whether the last
+/// week is complete, and a whole-dataset check would erase the recent run
+/// forever the first time one settlement went missing. Counted in hours rather
+/// than whole days so a continuously recording host reports a rising number
+/// every hour instead of only at exact day boundaries.
+fn contiguous_history_hours(records: &[SettledFundingRecord]) -> usize {
+    let broken_at = records
         .windows(2)
-        .all(|window| {
+        .rposition(|window| {
             let elapsed = window[1].identity.settlement_time.as_i64()
                 - window[0].identity.settlement_time.as_i64();
-            (elapsed - MILLISECONDS_PER_HOUR).abs() <= MAX_SETTLEMENT_JITTER_MS
+            (elapsed - MILLISECONDS_PER_HOUR).abs() > MAX_SETTLEMENT_JITTER_MS
         })
-        .then_some(days)
+        // `rposition` indexes the pair; the run starts at its second element.
+        .map_or(0, |index| index + 1);
+    records.len() - broken_at
 }
 
 fn write_apr(
@@ -148,26 +157,12 @@ fn write_apr(
                     "Hourly funding", view.funding_rate_percent, view.funding_rate_bps
                 )?;
                 writeln!(output, "{:<17}{}%", "Simple APR", view.funding_apr_percent)?;
-                match view.contiguous_history_days {
-                    Some(1) => writeln!(
-                        output,
-                        "{:<17}{} hourly observations (1 day)",
-                        "History", view.available_observations
-                    ),
-                    Some(days) => writeln!(
-                        output,
-                        "{:<17}{} hourly observations ({days} days)",
-                        "History", view.available_observations
-                    ),
-                    None if view.available_observations == 1 => {
-                        writeln!(output, "{:<17}1 hourly observation", "History")
-                    }
-                    None => writeln!(
-                        output,
-                        "{:<17}{} hourly observations",
-                        "History", view.available_observations
-                    ),
-                }
+                writeln!(
+                    output,
+                    "{:<17}{}",
+                    "History",
+                    history_summary(view.available_observations, view.contiguous_history_hours)
+                )
             })();
             result.map_err(output_error)
         }
@@ -177,6 +172,27 @@ fn write_apr(
             })?;
             writeln!(output).map_err(output_error)
         }
+    }
+}
+
+/// How much history there is, and how much of it is unbroken.
+///
+/// The contiguous run is stated even when it is shorter than the dataset: a
+/// reader shown only a total cannot tell a complete week from a month with
+/// holes in it, and the two support very different conclusions.
+fn history_summary(observations: usize, contiguous: usize) -> String {
+    if observations == 1 {
+        return "1 hourly observation".to_owned();
+    }
+    let span = match contiguous / 24 {
+        0 => String::new(),
+        1 => " (1 day)".to_owned(),
+        days => format!(" ({days} days)"),
+    };
+    if observations == contiguous {
+        format!("{observations} hourly observations, all contiguous{span}")
+    } else {
+        format!("{observations} hourly observations, latest {contiguous} contiguous{span}")
     }
 }
 
@@ -315,15 +331,50 @@ mod tests {
     }
 
     #[test]
-    fn history_days_require_complete_contiguous_hourly_observations() {
+    fn contiguous_history_is_the_unbroken_run_ending_at_the_newest_observation() {
         let start = 1_700_000_000_000_i64;
-        let mut records: Vec<_> = (0..24)
-            .map(|hour| record(start + i64::from(hour) * MILLISECONDS_PER_HOUR, "0.0001"))
-            .collect();
-        assert_eq!(contiguous_history_days(&records), Some(1));
+        let hourly = |count: i64| -> Vec<_> {
+            (0..count)
+                .map(|hour| record(start + hour * MILLISECONDS_PER_HOUR, "0.0001"))
+                .collect()
+        };
 
-        records[12] = record(start + 13 * MILLISECONDS_PER_HOUR, "0.0001");
-        records.sort_by_key(|record| record.identity.settlement_time);
-        assert_eq!(contiguous_history_days(&records), None);
+        assert_eq!(contiguous_history_hours(&hourly(24)), 24);
+        // A run that is not a whole number of days still reports its length;
+        // the old check reported nothing except at exact day boundaries.
+        assert_eq!(contiguous_history_hours(&hourly(25)), 25);
+        assert_eq!(contiguous_history_hours(&hourly(1)), 1);
+        assert_eq!(contiguous_history_hours(&[]), 0);
+
+        // An old gap does not erase the recent run a decision rests on.
+        let mut gapped = hourly(24);
+        gapped.remove(3);
+        assert_eq!(contiguous_history_hours(&gapped), 20);
+
+        // A gap at the newest end leaves only what follows it.
+        let mut recent_gap = hourly(24);
+        recent_gap.remove(22);
+        assert_eq!(contiguous_history_hours(&recent_gap), 1);
+    }
+
+    #[test]
+    fn history_summary_distinguishes_a_complete_run_from_a_dataset_with_holes() {
+        assert_eq!(history_summary(1, 1), "1 hourly observation");
+        assert_eq!(
+            history_summary(168, 168),
+            "168 hourly observations, all contiguous (7 days)"
+        );
+        assert_eq!(
+            history_summary(24, 24),
+            "24 hourly observations, all contiguous (1 day)"
+        );
+        assert_eq!(
+            history_summary(200, 72),
+            "200 hourly observations, latest 72 contiguous (3 days)"
+        );
+        assert_eq!(
+            history_summary(10, 4),
+            "10 hourly observations, latest 4 contiguous"
+        );
     }
 }

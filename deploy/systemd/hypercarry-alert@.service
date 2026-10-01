@@ -1,0 +1,41 @@
+# Deliver an alert for a failed Hypercarry unit.
+#
+# The instance name is the unit that failed, passed through by OnFailure=%n.
+#
+# This repository does not ship alert delivery, and this unit does not pretend
+# to: it calls /etc/hypercarry/alert, which the operator writes. An installed
+# hook that does nothing is worse than no hook, because the timer will look
+# healthy while nobody is being told. Verify delivery by running
+#
+#   systemctl start hypercarry-alert@test.service
+#
+# and confirming the message actually arrives somewhere a human reads.
+
+[Unit]
+Description=Hypercarry alert for %i
+Documentation=file:/usr/share/doc/hypercarry/deploy-README.md
+
+[Service]
+Type=oneshot
+User=hypercarry
+Group=hypercarry
+EnvironmentFile=-/etc/hypercarry/hypercarry.env
+ExecStart=/etc/hypercarry/alert %i
+TimeoutStartSec=60
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077

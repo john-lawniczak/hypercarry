@@ -1,7 +1,8 @@
 # Hyperliquid testnet execution v1
 
-M8 is compiled only with `--features testnet-execution`. The default workspace
-and CLI remain read-only and do not link the exchange transport.
+M8 now lives in `hypercarry-hyperliquid` and is compiled only with
+`--features testnet-execution`. The analytics CLI remains read-only and does not
+link the exchange transport; the separate testnet operator enables it explicitly.
 
 ## Safety boundary
 
@@ -25,7 +26,7 @@ complete signed request. Hypercarry validates exact field preservation, a null
 vault, and the signature shape before transport; it never loads a private key.
 
 `hypersdk-signer` is a nested, default-off feature that pins `hypersdk` 0.2.15
-inside the execution crate. The host constructs and protects the signer, then
+inside the venue-adapter crate. The host constructs and protects the signer, then
 passes it to `HypersdkTestnetSigner`; there is deliberately no environment,
 file, or raw-key loader. The trading account and authorized signer are pinned
 separately because a Hyperliquid API/agent wallet normally has a distinct
@@ -64,8 +65,8 @@ state machine; invalid regressions fail closed.
 The opt-in deterministic lifecycle suite is:
 
 ```sh
-cargo test -p hypercarry-execution --features testnet-execution --locked
-cargo test -p hypercarry-execution --features hypersdk-signer --locked
+cargo test -p hypercarry-hyperliquid --features testnet-execution --locked
+cargo test -p hypercarry-hyperliquid --features hypersdk-signer --locked
 ```
 
 It covers place/rest, private partial fill, duplicate fill, cancel, REST

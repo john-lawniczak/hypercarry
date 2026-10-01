@@ -1,0 +1,44 @@
+# Assert the dataset is fresh, unbroken, and has room to grow.
+#
+# Failure here is the alert path: OnFailure runs hypercarry-alert@, which calls
+# the operator's own delivery hook. Nothing in this repository sends the alert.
+
+[Unit]
+Description=Hypercarry recording health check
+Documentation=file:/usr/share/doc/hypercarry/deploy-README.md
+After=network-online.target
+OnFailure=hypercarry-alert@%n.service
+
+[Service]
+Type=oneshot
+User=hypercarry
+Group=hypercarry
+EnvironmentFile=/etc/hypercarry/hypercarry.env
+ExecStart=/usr/local/bin/hypercarry-health-check
+TimeoutStartSec=120
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+AmbientCapabilities=
+# The check only reads the dataset; it never needs to write to it.
+ReadOnlyPaths=/var/lib/hypercarry
+UMask=0077

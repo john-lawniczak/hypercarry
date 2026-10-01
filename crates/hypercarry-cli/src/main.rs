@@ -8,6 +8,7 @@ mod backfill;
 mod basis;
 mod config;
 mod error;
+mod pnl;
 mod predict;
 mod record;
 mod snapshot;
@@ -16,10 +17,10 @@ mod tui;
 
 use crate::{
     config::{
-        AprOverrides, BackfillOverrides, ColorMode, OutputFormat, PredictOverrides,
+        AprOverrides, BackfillOverrides, ColorMode, OutputFormat, PnlOverrides, PredictOverrides,
         ProcessEnvironment, RecordOverrides, SnapshotOverrides, TracingMode, TuiOverrides,
-        resolve_apr, resolve_backfill, resolve_predict, resolve_record, resolve_snapshot,
-        resolve_tui,
+        resolve_apr, resolve_backfill, resolve_pnl, resolve_predict, resolve_record,
+        resolve_snapshot, resolve_tui,
     },
     error::{CliError, ErrorCategory},
 };
@@ -119,6 +120,27 @@ enum Command {
         /// Local dataset root. Defaults to ./data.
         #[arg(long)]
         dataset: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum)]
+        output: Option<OutputFormat>,
+        /// Metadata-only tracing mode written to stderr.
+        #[arg(long, value_enum)]
+        tracing: Option<TracingMode>,
+    },
+    /// Evaluate a recorded carry position against the local dataset.
+    Pnl {
+        /// Dataset network identity; no implicit default.
+        #[arg(long)]
+        network: Option<Network>,
+        /// Exact perpetual coin symbol, such as BTC.
+        #[arg(long)]
+        coin: Option<String>,
+        /// Local dataset root. Defaults to ./data.
+        #[arg(long)]
+        dataset: Option<PathBuf>,
+        /// Trade document describing the carry position, as schema-v1 JSON.
+        #[arg(long)]
+        trade: Option<PathBuf>,
         /// Output format.
         #[arg(long, value_enum)]
         output: Option<OutputFormat>,
@@ -328,6 +350,29 @@ fn run() -> Result<(), CliError> {
             )?;
             snapshot::configure_tracing(options.tracing)?;
             apr::run(&options)
+        }
+        Command::Pnl {
+            network,
+            coin,
+            dataset,
+            trade,
+            output,
+            tracing,
+        } => {
+            let options = resolve_pnl(
+                cli.config,
+                PnlOverrides {
+                    network,
+                    coin,
+                    dataset,
+                    trade,
+                    output,
+                    tracing,
+                },
+                &ProcessEnvironment,
+            )?;
+            snapshot::configure_tracing(options.tracing)?;
+            pnl::run(&options)
         }
         Command::Basis {
             coin,

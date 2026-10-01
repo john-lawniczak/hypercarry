@@ -1,7 +1,7 @@
 //! Optional, venue-neutral execution simulation and non-signing dry-run tools.
 //!
 //! Exchange transport and signer integrations remain default-off. The optional
-//! testnet SDK signer accepts a caller-constructed signer; this crate contains
+//! venue adapters live in `hypercarry-hyperliquid`; this crate contains
 //! no key loader or wallet configuration. The default hypercarry CLI does not
 //! depend on it.
 
@@ -19,9 +19,6 @@ mod risk;
 mod signing;
 mod simulator;
 mod traits;
-
-#[cfg(feature = "testnet-execution")]
-mod hyperliquid;
 
 #[cfg(feature = "mainnet-execution")]
 mod mainnet;
@@ -48,19 +45,6 @@ pub use risk::{
 pub use signing::validate_signer;
 pub use simulator::{CancelRacePriority, MarketFrame, SimulationConfig, SimulatorAdapter};
 pub use traits::{ExecutionAdapter, MarketMetadataResolver, RiskDecision, RiskPolicy, Signer};
-
-#[cfg(feature = "testnet-execution")]
-pub use hyperliquid::{
-    Clock, HyperliquidAssetResolver, HyperliquidL1Signer, HyperliquidSigningRequest,
-    HyperliquidTestnetConfig, HyperliquidTestnetExecutor, HyperliquidTransport, LiveOrder,
-    PrivateEvent, PrivateEventOutcome, PrivateStream, PrivateStreamEvent,
-    ReqwestHyperliquidTransport, SystemClock, TESTNET_ACKNOWLEDGEMENT, TestnetAcknowledgement,
-    TestnetReliability, TransportFailure, connect_testnet_private_stream, parse_private_message,
-    private_subscription_requests,
-};
-
-#[cfg(feature = "hypersdk-signer")]
-pub use hyperliquid::{HypersdkSignerError, HypersdkTestnetSigner};
 
 #[cfg(feature = "mainnet-execution")]
 pub use mainnet::{

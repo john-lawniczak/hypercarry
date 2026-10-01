@@ -20,8 +20,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history: the documentation-drift report compares each living
+          # document's last commit against commits touching crates/, which a
+          # shallow clone cannot answer.
+          fetch-depth: 0
       - name: reject known malicious Rust crates
         run: tools/check-rust-supply-chain.sh
+      # Advisory only. The pre-commit hook is the enforcement point; this step
+      # makes accumulated drift visible when that hook was bypassed, without
+      # failing a legitimate refactor that genuinely changes no documented claim.
+      - name: report living-documentation drift
+        continue-on-error: true
+        run: tools/check-docs-current.sh
       - name: install cargo-deny
         uses: taiki-e/install-action@cargo-deny
       - name: audit dependencies, licenses, and sources

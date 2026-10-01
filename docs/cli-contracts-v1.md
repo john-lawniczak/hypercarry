@@ -4,7 +4,14 @@ The `hypercarry` CLI separates copy-friendly human displays from stable JSON
 automation output. Commands that accept `--output json` emit one JSON document
 on stdout with `schema_version: 1`; diagnostics and progress remain on stderr.
 Decimal values are serialized as base-10 strings so consumers never lose
-precision through binary floating point.
+precision through binary floating point. Tracing, including `--tracing diagnostic`,
+also writes to stderr.
+
+Snapshot settlements are validated against the requested coin and inclusive
+four-hour window, sorted by timestamp, and deduplicated. Wrong-coin rows,
+out-of-window rows, and conflicting duplicate settlements fail as schema errors
+(exit code 12). Transient history request failures use the bounded retry policy
+shared with backfill.
 
 ## Operational commands
 
@@ -14,6 +21,7 @@ precision through binary floating point.
 | `backfill` | Resumable settled-funding history | Read-only HTTPS and local Parquet writes |
 | `record` | Public context and L2 capture | Read-only WebSocket and local JSONL/Parquet writes |
 | `apr` | Latest realized funding and simple APR | Local Parquet reads |
+| `pnl` | Realized carry result for one recorded position | Local Parquet and trade-document reads |
 | `basis` | Exact perp/spot basis from explicit prices | None |
 | `spread` | Exact interval-normalized funding spread | None |
 | `predict` | Causal next-hour estimate from a raw capture | Local JSONL and optional Parquet reads |
@@ -51,6 +59,57 @@ hypercarry spread --coin BTC \
   --venue-b Venue8h --rate-b 0.0004 --interval-b-hours 8 \
   --output json
 ```
+
+`pnl --output json` fields are `schema_version`, `network`, `venue`, `coin`,
+`quote_unit`, `side`, `size`, `hedged`, `closed`, `settlement_valuation`,
+`valuation_price`, `entry_time_ms`, `exit_time_ms`, `first_settlement_ms`,
+`last_settlement_ms`, `settlements`, `dataset_first_settlement_ms`,
+`dataset_last_settlement_ms`, `window_fully_covered`, `entry_notional`,
+`funding`, `perp_price_pnl`, `spot_price_pnl`, `fees`, `net`,
+`return_on_notional`, and `annualized_return`. Monetary values are USDC. The
+components sum exactly to `net`; `fees` is reported positive and subtracted.
+
+The position is read from a schema-v1 trade document named by `--trade`, which
+is an operator record rather than pipeline output. Unknown fields are rejected.
+
+```sh
+hypercarry pnl --network mainnet --coin BTC --dataset data \
+  --trade ./trades/btc-carry.json --output json
+```
+
+Funding applies to settlements strictly after `entry_time_ms` and at or before
+the exit, because a position opened exactly at a settlement did not hold through
+it. Settlement timestamps carry millisecond jitter, so a round-hour window can
+exclude the settlement it looks like it should contain; the human view prints
+the applied range for exactly this reason. `window_fully_covered` is true only
+when the dataset holds an observation at or before entry, one at or after the
+end, and an unbroken hourly sequence between them. Spanning the endpoints is not
+sufficient: a settlement missing *inside* the window understates funding exactly
+as a missing endpoint does, and a span check cannot see it. Gaps outside the
+window belong to other windows and do not affect this one.
+
+Requiring an observation past the end is stricter than the hourly schedule
+demands, in the conservative direction. A trade that has just closed reads as
+partial until the next settlement is recorded, which also distinguishes "no
+settlement was due" from "recording stopped". An open position is never fully
+covered, because funding it will earn has not settled yet — so read
+`window_fully_covered` on a **closed** trade document.
+
+The settled-funding dataset stores a rate and a premium, not a mark price, so
+valuing each settlement requires an explicit choice. `settlement_valuation`
+defaults to `perp-entry-price` (constant notional) and may be `fixed` with an
+explicit price. The choice is echoed into the output rather than assumed.
+Human percentages are rounded to six decimal places for display; the JSON
+contract keeps the exact value.
+
+`apr --output json` reports `contiguous_history_hours` alongside
+`available_observations`: the unbroken hourly run ending at the newest
+observation, which is what a monitor must assert to trust recent history. A
+total count cannot distinguish a complete week from a month with holes in it.
+The run is measured backwards from the newest record, so a gap in old history
+does not erase it, and it is counted in hours so a continuously recording host
+sees it rise every hour rather than only at day boundaries. The human view
+states both the total and the run.
 
 The snapshot, backfill, APR, recorder, and predictor schema-v1 contracts are
 frozen in their focused documents:

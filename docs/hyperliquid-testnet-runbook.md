@@ -1,7 +1,7 @@
 # Hyperliquid testnet operator runbook
 
 This runbook applies to a host application integrating the feature-gated
-`hypercarry-execution` library or the repository's non-shipping
+`hypercarry-hyperliquid` venue library or the repository's non-shipping
 `hypercarry-testnet-operator` evidence harness. Hypercarry's shipped CLI remains
 read-only.
 
@@ -35,7 +35,7 @@ interactive signing to `cast` and never accepts a raw key or password.
 
 ## Startup
 
-1. Build the host with `--features hypersdk-signer` when embedding the pinned SDK
+1. Enable `hypercarry-hyperliquid`'s `testnet-execution` and `hypersdk-signer` features when embedding the pinned SDK
    adapter, or build `hypercarry-testnet-operator` for the local-socket signer
    boundary. Verify the endpoint in the build is
    `api.hyperliquid-testnet.xyz`. Hypercarry provides no raw-key loader.

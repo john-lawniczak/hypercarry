@@ -1,7 +1,8 @@
 # Mainnet release gate v1
 
-M9 implements a release gate; it does not declare mainnet ready. There is no
-mainnet transport or order adapter in this repository. The gate module itself
+M9 implements a release gate; it does not declare mainnet ready. The default-off
+adapter and one-shot executor are now implemented in separate crates; see
+[mainnet integration](mainnet-integration-v1.md). The gate module itself
 is compiled only with the default-off `mainnet-execution` feature, and the
 current evidence record has one clean credentialed candidate but no independent
 reviewer attestation, complete three-session set, or human release approval.
@@ -41,7 +42,12 @@ mainnet, or prove the reviewer's organizational independence.
 **testnet** key alias used for separation, a reviewed configuration revision,
 health/latency thresholds, and a short authorization TTL. Its canonical digest
 must exactly match the reviewed bundle. The canary cannot exceed the reviewed
-maximum; any configuration change requires a newly approved bundle.
+maximum; any configuration change requires a newly approved bundle. The executor additionally requires
+`integration_config_digest`, binding the complete venue/runtime configuration
+(account, signer address, paths, risk limits, exact order, asset mapping and
+timeouts) into this canonical review digest. Its reviewed transport artifact
+must identify the actual executable SHA-256, and the embedded clean source and
+lockfile identities must match the bundle.
 
 Each authorization consumes typed proof of explicit `--enable-mainnet` input
 and exact interactive confirmation `ENABLE HYPERCARRY MAINNET CANARY`. The
@@ -50,7 +56,7 @@ the exact alias in the reviewed bundle. The gate never invokes the signer.
 
 ## Continuous operational gate
 
-Before every future mainnet order, authorization rechecks:
+Before every mainnet order, authorization rechecks:
 
 - the order remains in the single market and at/below canary notional;
 - startup and continuous reconciliation are ready;
@@ -61,9 +67,9 @@ Before every future mainnet order, authorization rechecks:
 - the process-independent heartbeat dead-man control is present and fresh.
 
 `MainnetAuthorization` has no public constructor, embeds the one exact
-`ValidatedOrder`, and expires after the reviewed short TTL. A future mainnet
-adapter must take the capability by value and call `into_order` immediately;
-it must not accept a second caller-supplied order. It then repeats continuous
+`ValidatedOrder`, and expires after the reviewed short TTL. The mainnet
+adapter takes the capability by value and calls `into_order` immediately;
+it does not accept a second caller-supplied order. It then repeats continuous
 reconciliation and health gates. Limit expansion requires a newly reviewed
 bundle; the gate does not infer approval from prior operation.
 
@@ -72,6 +78,7 @@ bundle; the gate does not infer approval from prior operation.
 **Closed.** `docs/testnet-execution-evidence.md` records deterministic M8 tests
 and one clean credentialed candidate, but that candidate has no independent
 human attestation and the required three-session set is incomplete. There is no
-mainnet transport, frozen release bundle, security-review record, rollback
-artifact, final evidence digest, or human approval. Mainnet must not be enabled
+frozen release bundle, security-review record, rollback artifact, final evidence
+digest, or human approval. The implemented integration also requires reviewed
+external mainnet signing, health supervision, alerts and watchdog services. Mainnet must not be enabled
 or represented as production-ready.

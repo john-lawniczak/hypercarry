@@ -1,111 +1,53 @@
 # hypercarry
 
-Hyperliquid funding recorder & predictor — a Rust tool that records perpetual
-funding, open interest, and order-book data to a local, queryable, backtestable
-dataset, and computes funding APR, perp–spot basis, cross-venue funding spreads,
-and a predicted next-hour funding rate.
+Hyperliquid funding recorder, predictor, and execution research tool.
 
-> Not affiliated with Hyperliquid. The default CLI consumes only public,
-> read-only market data. An optional default-off library feature can execute on
-> testnet through an external signer; there is no built-in key loader or
-> mainnet transport. Not trading advice.
+Hypercarry helps you investigate whether a carry trade earned enough funding to
+cover its costs. A typical positive-funding carry trade buys an asset on the
+spot market and shorts the same quantity of its perpetual contract. The price
+moves partly offset; the short may receive funding from longs. Funding can
+reverse, and fees, basis changes and liquidation risk can turn the result into
+a loss.
 
-## Status
+The Rust tool records reproducible funding history, evaluates recorded trades
+with explicit valuation assumptions, and estimates the next hour's rate. It
+exists to make those inputs and calculations inspectable instead of relying on
+an attractive headline APR. It does not choose trades or manage a spot hedge.
 
-**M9 gate engineering is complete; mainnet release readiness remains closed
-pending independently reviewed testnet evidence and a reviewed transport.**
-What exists today:
+```text
+BTC-PERP · HYPERLIQUID MAINNET · SHORT CARRY
 
-See [DEV_STATUS.md](DEV_STATUS.md) for the continuously maintained capability
-matrix, live-integration readiness, design decisions, and recommended next work.
+Window           2026-09-16T20:00:00.000Z → 2026-09-17T20:00:00.000Z (24h)
+Settlements      24 applied
+Applied range    2026-09-16T20:00:00.091Z → 2026-09-17T19:00:00.007Z
+Size             0.5 BTC  (notional 40750 USDC at entry, spot hedged)
+Valuation        perp-entry-price at 81500
 
-- A Cargo workspace with `hypercarry-core` (domain/client/predictor library),
-  `hypercarry-recorder` (bounded WebSocket capture/replay),
-  `hypercarry-storage` (versioned dataset contracts), and `hypercarry-cli`
-  (binary), plus the optional `hypercarry-execution` simulation/dry-run crate
-  and a non-published `hypercarry-testnet-operator` evidence harness.
-- Typed models for the three Hyperliquid `info`-endpoint responses the tool
-  consumes (`fundingHistory`, `metaAndAssetCtxs`, `predictedFundings`). All
-  monetary and rate fields are `rust_decimal::Decimal`, never `f64`. Shapes are
-  verified against live API responses, including the `null` price fields that
-  delisted assets carry.
-- Golden deserialize tests on recorded payloads, so schema drift breaks CI.
-- A typed, async, traced client for the three read-only Hyperliquid `info`
-  requests. Mainnet/testnet selection is explicit, custom development endpoints
-  enforce HTTPS away from loopback, and the injectable transport keeps normal
-  tests entirely on recorded fixtures.
-- Opt-in live REST smoke tests cover all three requests on mainnet and testnet;
-  they remain ignored during normal offline test runs.
-- Operational `snapshot`, `backfill`, `record`, `apr`, `basis`, `spread`,
-  `predict`, and `tui` commands with explicit network and coin selection.
-  Snapshot combines current context, venue predictions, and
-  recent settled funding.
-  Backfill resumes into the atomic Parquet dataset with progress and Ctrl-C
-  cancellation; APR reads the latest settlement and annualizes it. APR's
-  default operator view uses UTC timestamps, signed percentages and basis
-  points, and a verified contiguous-history duration. Automation-oriented
-  commands provide versioned JSON; layered commands resolve flags > environment
-  > JSON config. The TUI is intentionally interactive, while `basis` and
-  `spread` are deterministic local calculations. Exit code 3 remains reserved
-  for backward compatibility.
-- A validated settled-funding Parquet v1 schema with deterministic identity,
-  safe Hive partition paths, exact decimal handling, and reproducibility
-  provenance. Its production writer performs sorted overlap deduplication,
-  atomic daily-partition replacement, and monotonic per-stream checkpoints.
-  The contract is documented in
-  [docs/settled-funding-parquet-v1.md](docs/settled-funding-parquet-v1.md).
-- Inclusive-boundary `fundingHistory` pagination with overlap deduplication,
-  deterministic ordering, stalled-page protection, bounded jittered retries,
-  rate-limit awareness, and offline multi-page tests. Schema v1 also passes a
-  real Arrow/Parquet write/read round trip.
-- CI gating on the declared Rust 1.93 MSRV, `cargo fmt --check`,
-  `cargo clippy -D warnings` (pedantic), tests/doctests, dependency policy, and
-  an all-feature release build.
-- Exact decimal metrics for perp-spot basis, settlement-interval-normalized
-  cross-venue funding spread, and funding-window statistics. Examples run in
-  the normal suite, invariants are property-tested, and Criterion benchmarks
-  cover the metric hot paths.
-- An explicit mainnet/testnet public WebSocket subscriber for asset context and
-  L2 books, with capped reconnect backoff, heartbeats, staleness detection, and
-  cancellation. Every frame enters versioned raw JSONL before a bounded
-  normalization queue; query-oriented Parquet and stable health diagnostics
-  remain rebuildable through deterministic local replay. The queue's measured
-  policy preserves raw frames while dropping and counting only the newest
-  normalized projection under pressure.
-- An exact-decimal next-hour funding baseline that reconstructs the documented
-  impact-price premium, collapses replay into five-second slots, reports
-  partial-hour coverage/confidence, and rejects future-data leakage. Realized
-  settlement is ground truth; official predictions remain a separately scored
-  benchmark. Walk-forward evaluation reports signed, absolute, and rolling
-  errors without adding an unproven statistical model.
-
-M1 through M8 and the M9 gate implementation are complete. One clean
-credentialed testnet candidate has been recorded, but it remains uncounted
-until an independent human emits its reviewer attestation. Operational release
-readiness also requires two more reviewed clean sessions, the documented fault
-exercises, transport/configuration/dependency security and rollback review, and
-a human approval binding the final bundle. The shipped CLI remains read-only.
-
-## Build
-
-```sh
-cargo test --workspace # runs the golden deserialize tests
-cargo run -p hypercarry-cli -- --help
-cargo run -p hypercarry-cli -- snapshot --network testnet --coin BTC
-cargo run -p hypercarry-cli -- snapshot --network testnet --coin BTC --output json
-cargo run -p hypercarry-cli -- backfill --network testnet --coin BTC --days 7 --dataset data
-cargo run -p hypercarry-cli -- apr --network testnet --coin BTC --dataset data
-cargo run -p hypercarry-cli -- record --network testnet --coins BTC,ETH --dataset data --output json
-cargo run -p hypercarry-cli -- predict --network testnet --coin BTC --capture <raw.jsonl> --settlement-ms <UTC_HOUR_MS> --as-of-ms <CUTOFF_MS> --dataset data --output json
-cargo run -p hypercarry-cli -- basis --coin BTC --perp-mark 101 --spot-mid 100
-cargo run -p hypercarry-cli -- spread --coin BTC --venue-a Hyperliquid --rate-a 0.0001 --interval-a-hours 1 --venue-b Venue8h --rate-b 0.0004 --interval-b-hours 8
-cargo run -p hypercarry-cli -- tui --network testnet --coin BTC --capture <raw.jsonl> --color auto
-cargo run -p hypercarry-cli -- completions zsh > _hypercarry
-cargo run -p hypercarry-cli -- manpage > hypercarry.1
+Funding          +9.909963975 USDC
+Perp price       +125 USDC
+Spot hedge       -50 USDC
+Fees             -73.18125 USDC
+                 ─────────────
+Net              +11.728713975 USDC  (+0.028782% on notional, +10.505474% APR)
 ```
 
-APR defaults to a copy-friendly operator view; `--output json` preserves the
-stable schema-v1 automation contract:
+Every monetary and rate value is `rust_decimal::Decimal`, never `f64`. The
+example uses entry-price funding valuation and supplied fees; it is an
+approximation, not an account cash-funding statement.
+
+## Quick start
+
+```sh
+cargo run -p hypercarry-cli -- snapshot --network mainnet --coin BTC
+```
+
+That is read-only public market data and needs no credentials. To build a local
+history and annualize the latest settlement:
+
+```sh
+cargo run -p hypercarry-cli -- backfill --network mainnet --coin BTC --days 7 --dataset data
+cargo run -p hypercarry-cli -- apr --network mainnet --coin BTC --dataset data
+```
 
 ```text
 BTC-PERP · HYPERLIQUID TESTNET
@@ -116,60 +58,185 @@ Simple APR       +476.8350072%
 History          168 hourly observations (7 days)
 ```
 
-### Configuration
+The APR output below is an illustrative **testnet** result, not the output of
+the mainnet commands above or an expected return.
+
+## Safety model
+
+**The shipped CLI is read-only.** It accepts no private key, signs nothing,
+touches no wallet, and places no orders. There is no built-in key loader
+anywhere in the workspace.
+
+Execution exists, is default-off, and lives in separate crates. No mainnet
+order has been submitted by this implementation. Production custody integration,
+parts of the supervisor and independent release evidence remain unfinished.
+The release gate refuses to authorize an order until its requirements hold:
+
+- Authorization requires three independently reviewed credentialed testnet
+  sessions, a frozen bundle identifying the exact commit, lockfile digest and
+  binary hash, and a human decision whose SHA-256 digest binds all of it, so
+  none of it can be edited after approval.
+- Before every order it rechecks reconciliation state, unmanaged-order and
+  unresolved-submission counts, REST and private-stream latency, the audit
+  journal, the rollback path, and a process-independent dead-man switch.
+- The authorization capability has no public constructor, carries one exact
+  order, is consumed by value, and expires on a short reviewed TTL.
+- The kill switch is rechecked at the final irreversible submit boundary,
+  after the signer round trip.
+- The binary embeds its source commit and lockfile digest; one built from a
+  dirty tree cannot pass preflight.
+
+The default-off `hypercarry-mainnet-services` crate supplies the signer service
+and watchdog, including bounded reduce-only recovery. Key custody remains in an
+external provider; hosts, provider integration and alert delivery still require
+provisioning. See [operational services](docs/mainnet-services-v1.md). Health supervision is partly shipped, as the
+credential-free `hypercarry-supervisor`; what it has not yet measured it reports
+as not ready, so the executor declines.
+
+**Current release decision: closed.** See
+[mainnet-release-gate-v1](docs/mainnet-release-gate-v1.md) for what remains.
+
+Not affiliated with Hyperliquid. Not trading advice.
+
+## Commands
+
+| Command | Purpose | External I/O |
+|---|---|---|
+| `snapshot` | Current context, venue predictions, recent settlements | Read-only HTTPS |
+| `backfill` | Resumable settled-funding history into Parquet | Read-only HTTPS, local writes |
+| `record` | Public asset-context and L2 book capture | Read-only WebSocket, local writes |
+| `apr` | Latest realized funding, annualized | Local Parquet |
+| `pnl` | What one recorded carry position earned | Local Parquet, trade document |
+| `basis` | Exact perp-spot basis | None |
+| `spread` | Interval-normalized cross-venue funding spread | None |
+| `predict` | Causal next-hour funding estimate from a capture | Local JSONL, optional Parquet |
+| `tui` | Live view over an actively appended capture | Local JSONL |
+
+```sh
+cargo run -p hypercarry-cli -- --help
+cargo run -p hypercarry-cli -- record --network mainnet --coins BTC,ETH --dataset data --output json
+cargo run -p hypercarry-cli -- pnl --network mainnet --coin BTC --dataset data --trade <trade.json>
+cargo run -p hypercarry-cli -- basis --coin BTC --perp-mark 101 --spot-mid 100
+cargo run -p hypercarry-cli -- spread --coin BTC \
+  --venue-a Hyperliquid --rate-a 0.0001 --interval-a-hours 1 \
+  --venue-b Venue8h --rate-b 0.0004 --interval-b-hours 8
+cargo run -p hypercarry-cli -- predict --network mainnet --coin BTC \
+  --capture <raw.jsonl> --settlement-ms <UTC_HOUR_MS> --as-of-ms <CUTOFF_MS> --dataset data
+cargo run -p hypercarry-cli -- tui --network mainnet --coin BTC --capture <raw.jsonl> --color auto
+cargo run -p hypercarry-cli -- completions zsh > _hypercarry
+cargo run -p hypercarry-cli -- manpage > hypercarry.1
+```
+
+Human views are copy-friendly; `--output json` preserves a stable schema-v1
+automation contract with decimals as base-10 strings. Diagnostics, progress and
+tracing go to stderr. Exit codes are stable and documented in
+[cli-contracts-v1](docs/cli-contracts-v1.md).
+
+## How it is built
+
+- **Exact arithmetic.** No monetary or rate value passes through `f64`.
+  Fund-affecting operations are checked, so out-of-range inputs return errors
+  rather than panicking or wrapping.
+- **Reproducible data.** A versioned settled-funding Parquet schema with
+  deterministic identity, safe Hive partition paths, sorted overlap
+  deduplication, atomic daily-partition replacement, monotonic checkpoints and
+  ingestion provenance. Raw WebSocket frames land in versioned JSONL before any
+  normalization, so Parquet and health diagnostics are rebuildable by replay.
+- **Causal prediction.** The next-hour baseline reconstructs the documented
+  impact-price premium, reports partial-hour coverage and confidence, and
+  rejects future-data leakage. Realized settlement is ground truth; official
+  predictions are scored as a separate benchmark.
+- **Offline tests.** Normal runs use recorded fixtures; live REST and WebSocket
+  smoke tests are opt-in and ignored by default. Golden deserialize tests break
+  CI on upstream schema drift.
+- **CI gates** the declared Rust 1.93 MSRV, `cargo fmt --check`, pedantic
+  `cargo clippy -D warnings`, tests and doctests, `cargo deny`, and an
+  all-feature release build.
+
+Workspace crates: `hypercarry-core` (domain, read-only client, metrics, carry
+ledger, predictor), `hypercarry-storage` (dataset contracts),
+`hypercarry-recorder` (bounded capture and replay), `hypercarry-cli` (the
+read-only binary), `hypercarry-execution` (venue-neutral risk, lifecycle,
+journal, release gate), `hypercarry-hyperliquid` (venue adapter and signing
+boundary), `hypercarry-executor` (default-off manual or one-use-approved canary),
+`hypercarry-mainnet-services` (isolated signer and emergency watchdog),
+`hypercarry-mcp` (optional scoped stdio interface),
+`hypercarry-mainnet-config` (runtime configuration, its reviewed digest, and the
+health-file contract), `hypercarry-supervisor` (default-off, credential-free
+account-health observer), and a non-published `hypercarry-testnet-operator`
+evidence harness.
+
+## MCP integration
+
+The optional `hypercarry-mcp` stdio server exposes analytics to MCP clients.
+It defaults to read-only; explicit `--scope read,write` permits local backfills
+and saved trade records. The separate `trade` scope plus `--enable-mainnet`
+can consume a short-lived, single-use operator approval for the exact reviewed
+canary; it cannot change the order or bypass the release gate. Responses retain
+decimal strings, network, observation time, units, data coverage, valuation
+assumptions and provenance. Prediction confidence measures data completeness,
+not probability of profit. See [MCP integration](docs/mcp-v1.md).
+
+## Configuration
+
+Layered commands resolve command-line flags, then `HYPERCARRY_*` environment
+variables, then the named JSON configuration section. Network and coin never
+silently default.
 
 - Common: `HYPERCARRY_NETWORK`, `HYPERCARRY_COIN`, `HYPERCARRY_COINS`,
-  `HYPERCARRY_OUTPUT`, and `HYPERCARRY_TRACING`.
-- Storage and recording: `HYPERCARRY_DATASET`, `HYPERCARRY_DAYS`, and
+  `HYPERCARRY_OUTPUT`, `HYPERCARRY_TRACING`.
+- Storage and recording: `HYPERCARRY_DATASET`, `HYPERCARRY_DAYS`,
   `HYPERCARRY_QUEUE_CAPACITY`.
+- Carry P&L: `HYPERCARRY_TRADE`.
 - Prediction replay: `HYPERCARRY_CAPTURE`, `HYPERCARRY_SETTLEMENT_MS`,
-  `HYPERCARRY_AS_OF_MS`, `HYPERCARRY_OFFICIAL_RATE`, and
+  `HYPERCARRY_AS_OF_MS`, `HYPERCARRY_OFFICIAL_RATE`,
   `HYPERCARRY_OFFICIAL_OBSERVED_AT_MS`.
-- TUI: `HYPERCARRY_REFRESH_MS` and `HYPERCARRY_COLOR`.
+- TUI: `HYPERCARRY_REFRESH_MS`, `HYPERCARRY_COLOR`.
 - JSON configuration: `--config <PATH>` or `HYPERCARRY_CONFIG`.
 
-Command-line values take precedence over environment variables and JSON
-configuration.
+## Status
 
-### Reference documentation
+M1 through M8 and the M9 release-gate implementation are complete. The mainnet
+adapter and manual executor are implemented behind default-off features;
+mainnet release readiness is **closed**.
 
-- Recording and replay: [live-market-recording-v1](docs/live-market-recording-v1.md).
-- Prediction, causality, confidence, and evaluation:
-  [funding-prediction-v1](docs/funding-prediction-v1.md).
-- CLI contracts and recovery: [cli-contracts-v1](docs/cli-contracts-v1.md) and
-  [operator-recovery](docs/operator-recovery.md).
-- Simulation, dry-run behavior, and journal schema:
-  [execution-simulation-v1](docs/execution-simulation-v1.md).
-- Risk, signer isolation, durable identity, throttling, and recovery:
-  [execution-safety-v1](docs/execution-safety-v1.md).
-- Testnet execution and operations: [testnet-execution-v1](docs/testnet-execution-v1.md),
-  [hyperliquid-testnet-runbook](docs/hyperliquid-testnet-runbook.md), and
-  [testnet-funding](docs/testnet-funding.md).
+One clean credentialed testnet place/cancel/reconcile candidate was recorded on
+2026-09-01. It does not yet count as one of the three required sessions because
+no independent human has emitted its reviewer attestation.
 
-The optional `hypersdk-signer` feature pins the signing SDK only inside the
-execution crate; it is absent from default/read-only builds.
-The testnet-only operator, its strict secret-free configuration, owner-only
-local signer protocol, non-overwriting evidence boundary, and offline
-independent-review attestation are documented in
-[docs/testnet-operator-v1.md](docs/testnet-operator-v1.md). The binary does not
-custody keys. A clean credentialed place/cancel/reconcile candidate was recorded
-on 2026-09-01; it is not yet one of the three required sessions because an
-independent human has not emitted its attestation. A separate non-published
-Foundry-keystore provider can serve the signer protocol by delegating
-interactive prehash signing to `cast`; it never accepts a raw key or password.
-Immediately before signing, the operator also verifies the account abstraction
-mode, mode-appropriate available collateral, open-order count, and
-agent-to-master authorization against the official testnet API.
-The first credentialed signing exercise failed closed before exchange
-submission on a leading-zero scalar encoding mismatch; `0b665ca` fixes the
-width and the next attempt must use entirely fresh one-shot session artifacts.
-M9's default-off schema-v2 reviewed-bundle evidence, exact-order authorization,
-canary, credential, health, reconciliation, alert, audit, rollback, and dead-man
-gate is documented in
-[docs/mainnet-release-gate-v1.md](docs/mainnet-release-gate-v1.md).
+[DEV_STATUS.md](DEV_STATUS.md) is the continuously maintained capability matrix,
+live-integration readiness record, and design-decision log.
 
-Requires stable Rust 1.93 or newer (`rust-toolchain.toml` selects the stable
-channel).
+## Reference documentation
+
+**Data and analytics**
+
+- [settled-funding-parquet-v1](docs/settled-funding-parquet-v1.md) — dataset contract
+- [live-market-recording-v1](docs/live-market-recording-v1.md) — capture and replay
+- [funding-prediction-v1](docs/funding-prediction-v1.md) — causality, confidence, evaluation
+- [cli-contracts-v1](docs/cli-contracts-v1.md) — output contracts and exit codes
+- [operator-recovery](docs/operator-recovery.md) — recovery procedures
+
+**Execution (default-off)**
+
+- [mainnet-release-gate-v1](docs/mainnet-release-gate-v1.md) — the authorization gate
+- [mainnet-integration-v1](docs/mainnet-integration-v1.md) — adapter, executor, required external services
+- [execution-safety-v1](docs/execution-safety-v1.md) — risk, signer isolation, durable identity
+- [execution-simulation-v1](docs/execution-simulation-v1.md) — dry-run behavior and journal schema
+- [testnet-execution-v1](docs/testnet-execution-v1.md), [hyperliquid-testnet-runbook](docs/hyperliquid-testnet-runbook.md) and [testnet-funding](docs/testnet-funding.md) — testnet operation
+- [testnet-operator-v1](docs/testnet-operator-v1.md) — evidence harness, owner-only signer protocol, reviewer attestation
+- [testnet-execution-evidence](docs/testnet-execution-evidence.md) — recorded session evidence
+- [adversarial-security-review-v1](docs/adversarial-security-review-v1.md) — findings and accepted backlog
+
+The optional `hypersdk-signer` feature pins the signing SDK inside
+`hypercarry-hyperliquid` and is absent from the read-only CLI. The testnet
+operator does not custody keys; a separate non-published Foundry-keystore
+provider can serve the signer protocol by delegating interactive prehash
+signing to `cast`, and never accepts a raw key or password.
+
+## Requirements
+
+Stable Rust 1.93 or newer; `rust-toolchain.toml` selects the stable channel.
 
 ## License
 

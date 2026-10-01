@@ -1,0 +1,46 @@
+{
+  "account_address": "0x1111111111111111111111111111111111111111",
+  "signer_address": "0x2222222222222222222222222222222222222222",
+  "signer_alias": "provider/mainnet-canary",
+  "signer_socket": "/var/lib/hypercarry-canary/signer.sock",
+  "signer_timeout_ms": 5000,
+  "action_ttl_ms": 10000,
+  "journal": "/var/lib/hypercarry-canary/canary.jsonl",
+  "health_file": "/var/lib/hypercarry-canary/health.json",
+  "heartbeat": "/var/lib/hypercarry-canary/watchdog.heartbeat",
+  "heartbeat_timeout_ms": 5000,
+  "kill_switch": "/var/lib/hypercarry-canary/STOP",
+  "asset_id": 0,
+  "size_decimals": 5,
+  "metadata": {
+    "venue": "hyperliquid",
+    "market": "BTC",
+    "price_tick": "1",
+    "size_step": "0.00001",
+    "minimum_size": "0.0001"
+  },
+  "order": {
+    "schema_version": 1,
+    "correlation_id": "replace-with-unique-reviewed-canary-id",
+    "venue": "hyperliquid",
+    "market": "BTC",
+    "side": "buy",
+    "quantity": "0.0001",
+    "limit_price": "100000",
+    "created_at_ms": 0
+  },
+  "risk": {
+    "allowed_markets": ["hyperliquid:BTC"],
+    "max_order_notional": "10",
+    "max_aggregate_notional": "10",
+    "max_price_deviation_bps": "10",
+    "max_leverage": "1",
+    "max_orders_per_window": 1,
+    "order_frequency_window_ms": 3600000,
+    "max_open_orders": 1,
+    "max_rolling_loss": "0",
+    "max_market_data_age_ms": 5000
+  },
+  "reconciliation_attempts": 10,
+  "reconciliation_interval_ms": 1000
+}

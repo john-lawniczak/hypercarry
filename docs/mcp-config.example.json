@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "network": "mainnet",
+  "coins": ["BTC", "ETH"],
+  "analytics_bin": "/opt/hypercarry/bin/hypercarry",
+  "analytics_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "dataset": "/var/lib/hypercarry/data",
+  "trade_directory": "/var/lib/hypercarry/trades",
+  "captures": {},
+  "timeout_ms": 60000
+}

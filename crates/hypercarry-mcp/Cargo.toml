@@ -1,0 +1,23 @@
+[package]
+name = "hypercarry-mcp"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Scoped stdio MCP access to Hypercarry analytics and reviewed operations."
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hypercarry-core = { version = "=0.0.0", path = "../hypercarry-core" }
+hypercarry-storage = { version = "=0.0.0", path = "../hypercarry-storage" }
+sha2 = "0.11"
+tempfile = "3"
+signal-hook = "0.4"
+
+[lints]
+workspace = true

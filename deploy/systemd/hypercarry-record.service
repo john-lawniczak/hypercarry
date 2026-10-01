@@ -1,0 +1,84 @@
+# Continuous live market recording. OPTIONAL.
+#
+# Read this before enabling it.
+#
+# This unit does NOT feed carry P&L. Settled funding — what `apr`, `pnl` and
+# `predict` read — comes from `backfill` alone. The recorder captures a separate
+# layer: live L2 book and asset-context frames, for basis and prediction work.
+#
+# It also writes orders of magnitude more data. Backfill writes one row per coin
+# per hour; the recorder writes every book update. Size the volume and decide
+# retention (HYPERCARRY_RAW_RETENTION_DAYS) before enabling, and watch the first
+# day's growth rather than trusting an estimate.
+#
+# Each start opens a NEW session file. Restarts therefore leave a sequence of
+# sessions rather than one growing file, which is what makes each session's
+# receive order replayable.
+
+[Unit]
+Description=Hypercarry live market recorder
+Documentation=file:/usr/share/doc/hypercarry/deploy-README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=hypercarry-alert@%n.service
+
+# Do not let a persistent failure loop silently. Five failures inside ten
+# minutes means the cause is not transient, so stop and let OnFailure alert.
+# These live in [Unit]; systemd ignores them under [Service].
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=hypercarry
+Group=hypercarry
+EnvironmentFile=/etc/hypercarry/hypercarry.env
+ExecStart=/usr/local/bin/hypercarry record \
+    --network ${HYPERCARRY_NETWORK} \
+    --coins ${HYPERCARRY_COINS} \
+    --dataset ${HYPERCARRY_DATASET} \
+    --queue-capacity ${HYPERCARRY_QUEUE_CAPACITY} \
+    --output json \
+    --tracing normal
+
+# The recorder treats SIGTERM as "cancel and drain", the same as Ctrl-C, so the
+# normalized Parquet for the session is finalized on a normal stop. Give it room
+# to finish that write; a hard kill here would leave the session's analytical
+# projection unfinalized and force a replay from raw to recover it.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+# A dropped WebSocket exhausts reconnects and exits non-zero. Restarting is the
+# correct response, but back off: if the venue is down, reconnecting every second
+# helps nobody and buries the journal.
+Restart=always
+RestartSec=15s
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/hypercarry
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

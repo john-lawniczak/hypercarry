@@ -1,21 +1,27 @@
 use crate::{ExecutionError, RiskDecision, RiskPolicy, ValidatedOrder};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, io::ErrorKind, path::PathBuf};
 
 const BPS_DENOMINATOR: u32 = 10_000;
 
 /// Complete, exact risk limits for one execution process.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RiskLimits {
     /// Allowlisted `venue:market` entries eligible for execution.
     pub allowed_markets: BTreeSet<String>,
     /// Maximum notional for a single order.
+    #[serde(with = "rust_decimal::serde::str")]
     pub max_order_notional: Decimal,
     /// Maximum aggregate open notional across orders.
+    #[serde(with = "rust_decimal::serde::str")]
     pub max_aggregate_notional: Decimal,
     /// Maximum limit-price deviation from reference, in basis points.
+    #[serde(with = "rust_decimal::serde::str")]
     pub max_price_deviation_bps: Decimal,
     /// Maximum permitted leverage.
+    #[serde(with = "rust_decimal::serde::str")]
     pub max_leverage: Decimal,
     /// Maximum orders allowed within the frequency window.
     pub max_orders_per_window: usize,
@@ -24,6 +30,7 @@ pub struct RiskLimits {
     /// Maximum concurrently open orders.
     pub max_open_orders: usize,
     /// Maximum tolerated trailing realized loss.
+    #[serde(with = "rust_decimal::serde::str")]
     pub max_rolling_loss: Decimal,
     /// Maximum tolerated age of reference market data, milliseconds.
     pub max_market_data_age_ms: i64,
@@ -81,23 +88,28 @@ impl RiskLimits {
 }
 
 /// Point-in-time account and market inputs used by the deterministic policy.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RiskSnapshot {
     /// Time the snapshot was taken, unix milliseconds.
     pub observed_at_ms: i64,
     /// Time of the reference market data, unix milliseconds.
     pub market_data_at_ms: i64,
     /// Reference price used for deviation and notional checks.
+    #[serde(with = "rust_decimal::serde::str")]
     pub reference_price: Decimal,
     /// Aggregate open notional across current orders.
+    #[serde(with = "rust_decimal::serde::str")]
     pub aggregate_notional: Decimal,
     /// Current account equity.
+    #[serde(with = "rust_decimal::serde::str")]
     pub account_equity: Decimal,
     /// Number of currently open orders.
     pub open_order_count: usize,
     /// Recent order submission times for frequency limiting.
     pub recent_order_times_ms: Vec<i64>,
     /// Signed realized `PnL` in the configured rolling window; loss is negative.
+    #[serde(with = "rust_decimal::serde::str")]
     pub rolling_pnl: Decimal,
 }
 

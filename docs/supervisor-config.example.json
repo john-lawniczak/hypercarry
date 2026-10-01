@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "executor_config": "/private/canary/config.json",
+  "rolling_pnl_window_ms": 86400000,
+  "sample_interval_ms": 5000
+}

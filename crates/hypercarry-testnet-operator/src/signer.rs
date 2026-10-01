@@ -1,4 +1,5 @@
-use hypercarry_execution::{ExecutionNetwork, HyperliquidL1Signer, HyperliquidSigningRequest};
+use hypercarry_execution::ExecutionNetwork;
+use hypercarry_hyperliquid::{HyperliquidL1Signer, HyperliquidSigningRequest};
 #[cfg(unix)]
 use serde::Deserialize;
 use serde::Serialize;

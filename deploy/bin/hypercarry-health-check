@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Assert that the recording host is actually still recording.
+#
+# A dataset that has quietly stopped growing looks identical to a healthy one
+# until someone reads it, and by then the funding it was supposed to capture is
+# gone: `backfill` can only repair a gap inside its request window. So this runs
+# hourly and fails loudly, which is what triggers the alert unit.
+#
+# Three questions, per coin unless noted:
+#
+#   1. Is the newest settlement recent?      (is anything arriving at all)
+#   2. Is the recent history unbroken?       (is what arrived complete)
+#   3. Is there room for more?               (disk, once, for the volume)
+#
+# Question 2 is the one a naive check misses. A dataset can take a new
+# settlement every hour while leaving a hole behind it, and a total row count
+# cannot tell the difference. `contiguous_history_hours` is the run ending at
+# the newest record, which is exactly the claim a carry result depends on.
+#
+# Exit 0 when every check passes, 1 otherwise. Never exits non-zero for a reason
+# the operator cannot act on.
+
+readonly CONFIG="${HYPERCARRY_ENV_FILE:-/etc/hypercarry/hypercarry.env}"
+readonly HYPERCARRY_BIN="${HYPERCARRY_BIN:-/usr/local/bin/hypercarry}"
+
+if [[ -r "$CONFIG" ]]; then
+  # shellcheck disable=SC1090
+  set -a && . "$CONFIG" && set +a
+fi
+
+: "${HYPERCARRY_NETWORK:?HYPERCARRY_NETWORK is not set}"
+: "${HYPERCARRY_DATASET:?HYPERCARRY_DATASET is not set}"
+: "${HYPERCARRY_COINS:?HYPERCARRY_COINS is not set}"
+: "${HYPERCARRY_MAX_SETTLEMENT_AGE_S:=9000}"
+: "${HYPERCARRY_MIN_CONTIGUOUS_HOURS:=24}"
+: "${HYPERCARRY_MIN_FREE_MIB:=2048}"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "health: jq is not installed; cannot read the apr JSON contract" >&2
+  exit 1
+fi
+
+failures=0
+
+fail() {
+  echo "health: FAIL: $*" >&2
+  failures=$((failures + 1))
+}
+
+ok() {
+  echo "health: ok: $*"
+}
+
+now_s="$(date -u +%s)"
+
+# --- Per-coin freshness and contiguity ---------------------------------------
+
+IFS=',' read -ra coins <<<"$HYPERCARRY_COINS"
+for coin in "${coins[@]}"; do
+  coin="${coin//[[:space:]]/}"
+  [[ -z "$coin" ]] && continue
+
+  if ! report="$("$HYPERCARRY_BIN" apr \
+    --network "$HYPERCARRY_NETWORK" \
+    --coin "$coin" \
+    --dataset "$HYPERCARRY_DATASET" \
+    --output json 2>&1)"; then
+    # Exit 14 is partial-data: the stream is empty, so backfill has never
+    # succeeded for this coin. That is a distinct failure from a stale stream.
+    fail "$coin: apr failed: ${report//$'\n'/ }"
+    continue
+  fi
+
+  settlement_ms="$(jq -r '.settlement_time_ms' <<<"$report")"
+  contiguous_h="$(jq -r '.contiguous_history_hours' <<<"$report")"
+
+  if [[ ! "$settlement_ms" =~ ^-?[0-9]+$ || ! "$contiguous_h" =~ ^[0-9]+$ ]]; then
+    fail "$coin: apr JSON did not carry the expected fields"
+    continue
+  fi
+
+  age_s=$((now_s - settlement_ms / 1000))
+  if ((age_s > HYPERCARRY_MAX_SETTLEMENT_AGE_S)); then
+    fail "$coin: newest settlement is ${age_s}s old (limit ${HYPERCARRY_MAX_SETTLEMENT_AGE_S}s)"
+  else
+    ok "$coin: newest settlement is ${age_s}s old"
+  fi
+
+  if ((contiguous_h < HYPERCARRY_MIN_CONTIGUOUS_HOURS)); then
+    fail "$coin: only ${contiguous_h}h contiguous (need ${HYPERCARRY_MIN_CONTIGUOUS_HOURS}h)"
+  else
+    ok "$coin: ${contiguous_h}h contiguous"
+  fi
+done
+
+# --- Disk ---------------------------------------------------------------------
+
+# The dataset volume filling is the failure that corrupts nothing and loses
+# everything: writes start failing, and the gap is only repairable while it is
+# still inside the backfill window.
+# `df -Pk` is POSIX and reports 1024-byte blocks on both Linux and macOS, so an
+# operator can exercise this check on a workstation before trusting it on the
+# host. GNU's -BM would not run there at all.
+if free_mib="$(df -Pk "$HYPERCARRY_DATASET" 2>/dev/null | awk 'NR==2 {print int($4/1024)}')" \
+  && [[ "$free_mib" =~ ^[0-9]+$ ]]; then
+  if ((free_mib < HYPERCARRY_MIN_FREE_MIB)); then
+    fail "dataset volume has ${free_mib}MiB free (limit ${HYPERCARRY_MIN_FREE_MIB}MiB)"
+  else
+    ok "dataset volume has ${free_mib}MiB free"
+  fi
+else
+  fail "could not read free space on $HYPERCARRY_DATASET"
+fi
+
+if ((failures > 0)); then
+  echo "health: $failures check(s) failed" >&2
+  exit 1
+fi
+
+echo "health: all checks passed"

@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Keeps the two living documents from drifting away from the code.
+#
+# DEV_STATUS.md records capability and verification, which most source changes
+# affect. Z-Explainer.md documents structure — the crate list, repository map,
+# architecture and module roles — so it is only required when the structure
+# actually changes: a new module, a new crate, or a workspace membership edit.
+#
+# Install:  git config core.hooksPath tools/hooks
+# Bypass:   SKIP_DOC_CHECK=1 git commit ...   (or git commit --no-verify)
+#
+# Bypassing is a legitimate choice for a work-in-progress commit you intend to
+# amend. It is deliberately explicit so it stays a decision rather than silence.
+
+if [[ -n "${SKIP_DOC_CHECK:-}" ]]; then
+  echo "pre-commit: doc currency check skipped by SKIP_DOC_CHECK" >&2
+  exit 0
+fi
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+[[ -n "$staged" ]] || exit 0
+
+matches() { grep -qE "$1" <<<"$staged"; }
+
+source_changed=0
+structure_changed=0
+
+if matches '^crates/.+\.rs$' || matches '^crates/.+/Cargo\.toml$'; then
+  source_changed=1
+fi
+
+# A new source file, a new crate, or a workspace membership change all alter
+# the structure the explainer describes.
+added="$(git diff --cached --name-only --diff-filter=A)"
+if grep -qE '^crates/.+\.rs$' <<<"$added" 2>/dev/null; then
+  structure_changed=1
+fi
+if matches '^Cargo\.toml$'; then
+  structure_changed=1
+fi
+
+(( source_changed || structure_changed )) || exit 0
+
+missing=()
+if ! matches '^DEV_STATUS\.md$'; then
+  missing+=("DEV_STATUS.md")
+fi
+# The explainer is maintainer-only and absent from the public mirror.
+if (( structure_changed )) && [[ -f Z-Explainer.md ]] && ! matches '^Z-Explainer\.md$'; then
+  missing+=("Z-Explainer.md")
+fi
+
+(( ${#missing[@]} )) || exit 0
+
+echo >&2
+echo "pre-commit: this commit changes code but not its living documentation." >&2
+echo >&2
+for doc in "${missing[@]}"; do
+  echo "  not staged: $doc" >&2
+done
+echo >&2
+
+if printf '%s\n' "${missing[@]}" | grep -qx 'DEV_STATUS.md'; then
+  cat >&2 <<'EOF'
+DEV_STATUS.md — check each of these:
+  1. Capability table and milestone state, if behavior changed.
+  2. "Recommended next moves", with completed work removed.
+  3. Verification result, if tests were added, removed, ignored, or changed.
+  4. New architectural or safety decisions, in the relevant section.
+  5. Planned behavior kept separate from behavior that exists now.
+  6. The "Last reviewed" date.
+
+EOF
+fi
+
+if printf '%s\n' "${missing[@]}" | grep -qx 'Z-Explainer.md'; then
+  cat >&2 <<'EOF'
+Z-Explainer.md — this commit adds or removes structure, so check:
+  1. Capability and safety matrix (§1).
+  2. Architecture diagram and dependency direction (§3).
+  3. Repository map and crate list (§4).
+  4. The crate or command section the change belongs to.
+  5. Documentation index (§16), if a docs/ contract was added.
+  6. Milestone history (§18) and intentional boundaries (§19).
+  7. Review checklist (§22) — remove any statement that stopped being true.
+  8. The "Last verified" date at the top.
+
+EOF
+fi
+
+cat >&2 <<'EOF'
+Stage the documentation with the change, or bypass deliberately:
+
+  SKIP_DOC_CHECK=1 git commit ...
+
+EOF
+exit 1
