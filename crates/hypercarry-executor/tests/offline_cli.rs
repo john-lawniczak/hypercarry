@@ -16,7 +16,11 @@ fn run_without_explicit_enable_stops_before_reading_config_or_signing() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(
+        output.stdout.is_empty(),
+        "printed to stdout: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
@@ -79,7 +83,11 @@ fn static_preflight_rejects_missing_reviewed_sessions_without_creating_journal()
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(
+        output.stdout.is_empty(),
+        "printed to stdout: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("sessions"), "unexpected error: {error}");
     assert!(!temp.path().join("journal").exists());
@@ -102,7 +110,11 @@ fn approved_execution_still_requires_explicit_enable_before_loading_files() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(
+        output.stdout.is_empty(),
+        "printed to stdout: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()

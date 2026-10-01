@@ -485,7 +485,7 @@ mod tests {
         .unwrap();
         let mut feed = ReplaySampleFeed::open(&path, Network::Testnet, "BTC".to_owned()).unwrap();
         let (samples, frames) = feed.poll(0, 1_001).unwrap();
-        assert!(samples.is_empty());
+        assert!(samples.is_empty(), "unexpected samples: {samples:?}");
         assert_eq!(frames, 1);
 
         let mut capture = OpenOptions::new().append(true).open(&path).unwrap();
@@ -498,7 +498,7 @@ mod tests {
         capture.flush().unwrap();
 
         let (samples, frames) = feed.poll_live(0, 1_001).unwrap();
-        assert!(samples.is_empty());
+        assert!(samples.is_empty(), "unexpected samples: {samples:?}");
         assert_eq!(frames, 1);
 
         let (samples, frames) = feed.poll_live(0, 1_002).unwrap();

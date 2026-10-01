@@ -184,7 +184,11 @@ mod tests {
         let mut dry_run = DryRun::new(Resolver, FailClosed, InMemoryJournal::default());
         let error = dry_run.evaluate(&intent()).unwrap_err();
         assert!(error.to_string().contains("risk snapshot unavailable"));
-        assert!(dry_run.into_journal().events.is_empty());
+        let events = dry_run.into_journal().events;
+        assert!(
+            events.is_empty(),
+            "journaled before policy passed: {events:?}"
+        );
     }
 
     fn intent() -> OrderIntent {

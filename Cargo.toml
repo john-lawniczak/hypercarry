@@ -38,8 +38,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 parquet = { version = "60.0", default-features = false }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
-arrow-array = "59.2"
-arrow-schema = "59.2"
+arrow-array = "60.0"
+arrow-schema = "60.0"
 bytes = "1"
 futures-util = "0.3"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }

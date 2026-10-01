@@ -8,6 +8,31 @@ capability lands, a milestone changes state, or a verification command changes.
 [the release gate](docs/mainnet-release-gate-v1.md) and
 [the integration runbook](docs/mainnet-integration-v1.md).
 
+## Upstream drift: stable Clippy and Arrow/Parquet 60 — 2026-10-01
+
+Two maintenance items, both caused by upstream moving rather than by this code.
+
+CI pins no toolchain for its Clippy step — it tracks floating stable with
+`-D warnings` — so a new lint becomes a build failure the day it ships. Rust
+1.99 added `clippy::assert_is_empty`, which turned seventeen
+`assert!(x.is_empty())` sites across seven crates into hard errors. Rather than
+take Clippy's `assert_eq!(x, [] as [T; 0])` rewrite, each assertion gained a
+message that prints what was actually present — the rows, requests, journal
+events or captured stdout that were supposed to be absent. That satisfies the
+lint by answering it, and the failures are more useful than before. Reproducing
+this locally requires the same floating stable Clippy that CI resolves, not
+whatever toolchain happens to be installed.
+
+`parquet`, `arrow-array` and `arrow-schema` move to 60.0 together. They have to
+move together: `parquet` 60 requires Arrow 60, so bumping it alone would have
+resolved two Arrow major versions at once and the column types would no longer
+unify. This is why the dependency bump had to land here rather than as a bump
+against the public mirror. No source change was required. Backward compatibility
+was checked against real on-disk data rather than assumed: the committed mainnet
+dataset, written by 59, still reads as 8,760 observations across 8,760
+contiguous hours. MSRV 1.93, `cargo deny` and the supply-chain deny-list all
+still pass.
+
 ## Post-implementation audit of the operational services — 2026-10-01
 
 A skeptical review of the day's commits found four defects, all fixed here.

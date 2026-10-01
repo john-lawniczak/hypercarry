@@ -497,13 +497,12 @@ mod tests {
 
         assert_eq!(error.category(), ErrorCategory::Cancelled);
         assert!(error.to_string().contains("rerun the same command"));
-        assert!(client.transport().requests.lock().expect("lock").is_empty());
-        assert!(
-            dataset
-                .stream_records(Network::Testnet, VENUE, "BTC")
-                .expect("stream read succeeds")
-                .is_empty()
-        );
+        let requests = client.transport().requests.lock().expect("lock");
+        assert!(requests.is_empty(), "unexpected requests: {requests:?}");
+        let stored = dataset
+            .stream_records(Network::Testnet, VENUE, "BTC")
+            .expect("stream read succeeds");
+        assert!(stored.is_empty(), "cancellation committed rows: {stored:?}");
     }
 
     #[test]

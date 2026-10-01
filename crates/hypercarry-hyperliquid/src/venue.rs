@@ -2151,8 +2151,12 @@ mod tests {
 
         assert!(matches!(error, ExecutionError::Validation(_)));
         let (transport, journal) = executor.into_parts();
-        assert!(transport.exchange_requests.is_empty());
-        assert!(journal.events.is_empty());
+        assert!(
+            transport.exchange_requests.is_empty(),
+            "submitted: {:?}",
+            transport.exchange_requests
+        );
+        assert!(journal.events.is_empty(), "journaled: {:?}", journal.events);
     }
 
     /// Believing the switch is armed when it is not is the failure this
@@ -2249,7 +2253,11 @@ mod tests {
         // queue would have panicked on a submit attempt.
         assert_eq!(calls.get(), 1);
         let (transport, journal) = executor.into_parts();
-        assert!(transport.exchange_requests.is_empty());
+        assert!(
+            transport.exchange_requests.is_empty(),
+            "submitted: {:?}",
+            transport.exchange_requests
+        );
         assert!(journal.events.iter().any(|event| matches!(
             &event.event,
             JournalEventKind::RiskRejected { rejection } if rejection.code == "kill_switch"
@@ -2342,7 +2350,11 @@ mod tests {
         assert_eq!(live.state(), OrderState::Rejected);
         assert_eq!(calls.get(), 0);
         let (transport, _) = executor.into_parts();
-        assert!(transport.exchange_requests.is_empty());
+        assert!(
+            transport.exchange_requests.is_empty(),
+            "submitted: {:?}",
+            transport.exchange_requests
+        );
     }
 
     #[test]
