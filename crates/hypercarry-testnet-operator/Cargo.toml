@@ -18,12 +18,11 @@ path = "src/bin/foundry_signer.rs"
 
 [dependencies]
 anyhow.workspace = true
-alloy.workspace = true
 chrono.workspace = true
 clap.workspace = true
 hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
 hypercarry-hyperliquid = { version = "=0.0.0", path = "../hypercarry-hyperliquid", features = ["testnet-execution"] }
-hypersdk.workspace = true
+hypercarry-signing.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true

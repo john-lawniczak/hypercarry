@@ -35,7 +35,7 @@ interactive signing to `cast` and never accepts a raw key or password.
 
 ## Startup
 
-1. Enable `hypercarry-hyperliquid`'s `testnet-execution` and `hypersdk-signer` features when embedding the pinned SDK
+1. Enable `hypercarry-hyperliquid`'s `testnet-execution` and `local-signer` features when embedding a caller-owned `DigestSigner`
    adapter, or build `hypercarry-testnet-operator` for the local-socket signer
    boundary. Verify the endpoint in the build is
    `api.hyperliquid-testnet.xyz`. Hypercarry provides no raw-key loader.

@@ -11,8 +11,10 @@ description = "Isolated Hyperliquid testnet and capability-gated mainnet adapter
 [features]
 default = []
 testnet-execution = []
-mainnet-execution = ["testnet-execution", "hypersdk-signer", "hypercarry-execution/mainnet-execution"]
-hypersdk-signer = ["testnet-execution", "dep:alloy", "dep:chrono", "dep:hypersdk"]
+mainnet-execution = ["testnet-execution", "local-signer", "hypercarry-execution/mainnet-execution"]
+local-signer = ["testnet-execution", "dep:chrono", "dep:hypercarry-signing"]
+# Deprecated feature alias; the old SDK is no longer a dependency.
+hypersdk-signer = ["local-signer"]
 
 [dependencies]
 hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
@@ -22,9 +24,8 @@ reqwest = { workspace = true, features = ["blocking", "json"] }
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-alloy = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
-hypersdk = { workspace = true, optional = true }
+hypercarry-signing = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = "3"

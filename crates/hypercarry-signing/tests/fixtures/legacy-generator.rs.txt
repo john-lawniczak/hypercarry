@@ -1,0 +1,24 @@
+use alloy::signers::local::PrivateKeySigner;
+use hypersdk::hypercore::{Action, Chain};
+use serde_json::json;
+fn main() {
+ let signer: PrivateKeySigner = "0000000000000000000000000000000000000000000000000000000000000001".parse().unwrap();
+ let actions = [
+ json!({"type":"order","orders":[{"a":0,"b":true,"p":"2000.00","s":"0.0100","r":false,"t":{"limit":{"tif":"Gtc"}},"c":"0x12345678901234567890123456789012"}],"grouping":"na"}),
+ json!({"type":"order","orders":[{"a":100001,"b":false,"p":"12.5","s":"2","r":true,"t":{"limit":{"tif":"Ioc"}},"c":"0xabcdefabcdefabcdefabcdefabcdefab"}],"grouping":"na"}),
+ json!({"type":"order","orders":[{"a":1,"b":false,"p":"1","s":"1","r":false,"t":{"limit":{"tif":"Alo"}}}],"grouping":"na"}),
+ json!({"type":"cancelByCloid","cancels":[{"asset":100001,"cloid":"0x12345678901234567890123456789012"}]}),
+ json!({"type":"cancel","cancels":[{"a":0,"o":123456789}]}),
+ json!({"type":"scheduleCancel","time":1700000060000_u64}),
+ json!({"type":"scheduleCancel"})];
+ let mut vectors = vec![];
+ for input in actions { for mainnet in [false,true] { for expires in [None,Some(1700000010000_i64)] {
+ let action: Action = serde_json::from_value(input.clone()).unwrap();
+ let chain = if mainnet {Chain::Mainnet} else {Chain::Testnet};
+ let expiry = expires.map(|e| chrono::DateTime::from_timestamp_millis(e).unwrap());
+ let hash = action.prehash(1700000000000,None,expiry,chain).unwrap();
+ let signed = action.sign_sync(&signer,1700000000000,None,expiry,chain).unwrap();
+ vectors.push(json!({"input":input,"mainnet":mainnet,"hash":hash,"signed":signed}));
+ } } }
+ println!("{}",serde_json::to_string_pretty(&vectors).unwrap());
+}

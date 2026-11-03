@@ -25,9 +25,9 @@ receives the explicit action, nonce, expiry, and typed network and returns the
 complete signed request. Hypercarry validates exact field preservation, a null
 vault, and the signature shape before transport; it never loads a private key.
 
-`hypersdk-signer` is a nested, default-off feature that pins `hypersdk` 0.2.15
-inside the venue-adapter crate. The host constructs and protects the signer, then
-passes it to `HypersdkTestnetSigner`; there is deliberately no environment,
+`local-signer` is a nested, default-off feature using `hypercarry-signing`
+with modern k256 and pinned crypto-bigint 0.7.10. The host constructs and protects
+a `DigestSigner`, then passes it to `LocalTestnetSigner`; there is no environment,
 file, or raw-key loader. The trading account and authorized signer are pinned
 separately because a Hyperliquid API/agent wallet normally has a distinct
 address. The host remains responsible for independently verifying that agent
@@ -66,13 +66,13 @@ The opt-in deterministic lifecycle suite is:
 
 ```sh
 cargo test -p hypercarry-hyperliquid --features testnet-execution --locked
-cargo test -p hypercarry-hyperliquid --features hypersdk-signer --locked
+cargo test -p hypercarry-hyperliquid --features local-signer --locked
 ```
 
 It covers place/rest, private partial fill, duplicate fill, cancel, REST
 reconciliation, restart, venue rejection, kill-switch/risk rejection before
 signing, uncertain submission, malformed private data, and a fill-winning
-cancel race. The SDK test additionally validates and recovers deterministic
+cancel race. The signing test additionally validates and recovers deterministic
 order/cancel signatures. No normal or feature test sends a live order.
 Credentialed live sessions must follow the operator runbook and be recorded as
 post-M9 release evidence.

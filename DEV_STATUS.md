@@ -1,12 +1,199 @@
 # Hypercarry development status
 
-Last reviewed: **2026-10-01**
+Last reviewed: **2026-11-03**
+
+Dependency PR consolidation: reviewed public PRs #22–#26 and selected their exact
+signal-hook 0.4.5, rust_decimal 1.43.0, clap_complete 4.6.11, reqwest 0.13.5 and
+serde_json 1.0.154 versions for the current source and single public update.
+Preserved unrelated Windows and tempfile RNG selections. Added an order-schema
+regression rejecting malformed decimal tails beyond the rounding position. See
+[the dependency review](docs/dependency-pr-review-2026-11-03.md) for compatibility
+and the old serde_json PR's unrelated rustls audit failure. Old bundles require
+new lockfile-bound evidence; this does not open the mainnet release gate.
+
+Dependency-update validation: **318 Rust tests passed, four opt-in live tests
+ignored; 24 Python tests passed**. Strict Clippy, formatting, Rust 1.94.1 and
+default-feature checks, release build, dependency/supply-chain checks and all
+28 official SDK signing vectors pass. Public CI must validate the refreshed
+single-commit PR before its superseded dependency PRs are closed.
+
+Public export preparation: corrected the release-gate summary's stale dependency
+failure claim to match the passing post-migration audit. This documentation fix
+does not change the closed mainnet decision, independent-review requirement or
+operational evidence gates. A filtered, single-commit public update is being
+prepared; independent publication content review remains outstanding.
 
 This is the living engineering-status document for hypercarry. Update it when a
 capability lands, a milestone changes state, or a verification command changes.
 `README.md` describes the product. The public operational requirements are in
 [the release gate](docs/mainnet-release-gate-v1.md) and
 [the integration runbook](docs/mainnet-integration-v1.md).
+
+## Post-implementation audit — 2026-11-03
+
+Follow-up 3: `tools/release_readiness.py` freezes a verified Linux bundle and six
+exact configuration snapshots, then verifies supplied evidence for twelve review
+and operational scenarios. It checks a trusted candidate hash, current config
+drift, retained artifacts, distinct testnet session identities and explicit
+failures/missing records. It never creates approval or claims independent review
+occurred. Release bundles now include passive cloud/preparation tooling. All 24
+Python tests pass, including candidate/artifact mutation, traversal, symlinks,
+duplicate sessions, missing review and refused non-Linux/incomplete bundles.
+The independent reviewer and actual AWS observations remain pending.
+
+Combined follow-up validation: **317 Rust tests passed, zero failed, four live
+tests ignored; 24 Python tests passed**. Formatting, strict all-target/all-feature
+workspace Clippy, Rust 1.94.1 and default-feature checks, refreshed cargo-deny and
+supply-chain checks, CloudFormation lint 1.48.0 and all 28 official SDK signing
+vectors pass. No credentialed cloud or trading exercise was performed.
+
+Follow-up 2: a passive CloudFormation reference now describes private executor
+and recovery hosts, KMS custody permissions and retained encrypted state. Offline
+preparation snapshots/validates explicit subnet and AMI inventories before a
+change-set review. The KMS provider's `--check-access` uses bounded GetPublicKey
+only, verifies identity and explicitly leaves signing/venue authorization
+unchecked. A state-mount assertion drop-in and cloud failure-exercise runbook
+complete the handoff. CloudFormation lint, four KMS tests and 17 Python tooling
+tests pass. AWS deployment, protected transport, actual monitoring receipts and
+witnessed exercises remain operator work; no cloud resources were created.
+
+Follow-up 1: the test-only supervisor fault harness now runs the real observation
+loop against local HTTP/WebSocket fixtures and consumes published health through
+the executor safety source. It covers event-during-publication, builder-DEX
+positions/orders, HTTP refusal, partial journals, stale/future payload clocks,
+disconnect/reconnect, missed pongs and SIGTERM with lock release. Production
+endpoints remain fixed; no fixture can be selected by production CLI/environment.
+The daemon also rechecks shutdown immediately before publication. The initial
+three harness tests and strict workspace Clippy pass; live topology validation
+remains separate.
+
+Audited all seven implementation commits from `4e54f9b` through `d0b1051`.
+[Findings and exact fixes](docs/post-implementation-audit-2026-11-03.md) cover
+provider input deadlines and descendant cleanup, authority/lock path omissions,
+exclusive diagnostic health publication, receipt age after artifact I/O, valid
+KMS public points, incomplete installation bundles, HTTP connection reuse and
+bounded failure diagnostics. Fresh independent review and deployed failure
+evidence remain required; no live custody or trading exercise was performed.
+
+Audit validation: **313 Rust tests passed, zero failed, four live tests ignored**;
+**13 Python release/export tests passed**. Strict workspace Clippy, formatting,
+default-feature check, Rust 1.94.1 all-target/all-feature check, refreshed dependency
+and supply-chain checks pass. The 28 official SDK signing vectors still agree.
+
+## Public-release hardening — 2026-11-03
+
+Pre-audit hardening verification: **307 Rust tests passed, zero failed, four live
+smokes ignored; 12 Python release/export tests passed**. Format, strict workspace
+Clippy, Rust 1.94.1 all-target/all-feature check, default-feature check, supply-chain
+and refreshed `cargo deny` checks passed. All 28 signing vectors match official
+Python SDK 0.24.0. The read-only Rust example fetched mainnet and testnet metadata
+successfully; the CLI and supervisor normal graphs remain free of signing crates.
+A clean release bundle from `8799350` was built, verified and passively installed
+into a temporary macOS staging root. This is packaging evidence, not a Linux/KMS
+exercise or approval of that development build for trading.
+
+Task 5: added the public [self-hosted operator guide](docs/self-hosted-mainnet-v1.md),
+explicit-network credential-free Rust integration example, and publication checks
+for local artifacts, known credential formats, symlinks and broken inline links.
+The filtered export validates before committing/pushing; CI checks its candidate
+tree. Independent content/security review and live infrastructure exercises remain
+required. No public release, cloud provisioning or trading was performed.
+
+Task 4: release tooling now builds clean-source manifests/checksummed bundles,
+explicitly fixes the Cargo target and rechecks source identity after staging,
+verifies private archive snapshots, stages safe regular files and installs role
+units passively. It rejects traversal, links, changed bytes, incompatible live
+host targets, conflicting installations and unsafe paths/permissions. Existing
+operator configuration/state is preserved and no service is started. Python
+regressions run in CI; see [release bundles](docs/release-bundles-v1.md).
+
+Task 3: added `hypercarry-doctor` for offline setup checks and KMS provider
+`--check-config` for local ARN/region/artifact checks without executing AWS or
+reading a signing request. Reports never authorize trading. Tests cover absent
+setup, changed policy/artifact bytes, timeout ordering and no state creation.
+See [setup diagnostics](docs/setup-diagnostics-v1.md).
+
+Task 2: added the credential-free `hypercarry-operations-probe` binary and
+strict delivery/recovery receipt contracts. It verifies independent freshness,
+runtime binding, successful checks and the actual recovery artifact hash.
+Supervisor policy optionally pins probe configuration bytes and passes `--config`
+without inherited environment. Monitoring receipt production remains real
+infrastructure work; the supplied adapter cannot manufacture it. See
+[operations probe](docs/operations-probe-v1.md).
+
+Task 1: shared authority-path validation now resolves existing ancestors before
+comparing absent files and rejects hard-link aliases and parent traversal.
+Executor, signer/watchdog and supervisor check authority inputs, mutable state
+and derived locks together. Alias regressions and affected crate tests pass.
+This prevents configurable deployments from bypassing distinct-path checks via
+a symlinked ancestor or overwriting their own configuration/evidence files.
+
+## Pre-commit audit — 2026-11-03
+
+Reviewed the complete pending launch/signing diff. Fixed local-signer scalar
+padding, derived supervisor/service lock-path collisions and unbounded private
+WebSocket writes. The Python conformance checker now keeps checks active under
+optimization. Added targeted regressions and reran the workspace gates:
+**301 passed, zero failed, four live tests ignored**; Clippy, format, release,
+MSRV/default checks, dependency audit and 28 Python conformance vectors pass.
+No unresolved high/critical code finding was identified in this bounded review;
+this is not independent security approval or production readiness. See
+[the audit record](docs/precommit-audit-2026-11-03.md) and retained launch blockers.
+
+## Single-canary readiness review — 2026-11-03
+
+Signing migration follow-up: `crypto-bigint 0.7.6` is yanked and the old
+SDK could not resolve the patched API. The user authorized migration to 0.7.10
+with a **fresh independent security review required**. `hypercarry-signing`
+now owns the narrow action codec and uses k256 0.14.0 / elliptic-curve 0.14.3 /
+crypto-bigint 0.7.10. HyperSDK and the Alloy signing umbrella were removed;
+Alloy public wire/EIP-712 types remain with crypto features disabled. All 28
+legacy fixtures also match official Python SDK 0.24.0 hashes and signatures.
+`cargo deny check` passes; bans prohibit reactivating the legacy crypto stack.
+See [migration review requirements](docs/signing-migration-review.md).
+
+Release remains **closed**. The current operational checklist is
+[mainnet-launch-runbook](docs/mainnet-launch-runbook.md). The owner selected a
+single reviewed mainnet canary and requested custody/hosting recommendations;
+no production provisioning, funding, credentials or order submission occurred.
+
+Implemented in this review:
+
+- AWS KMS prehash provider using a pinned CLI, immutable key ARN and EC2 IMDSv2
+  workload identity. Exact provider configuration bytes are service-policy-bound.
+  DER decoding, low-S conversion and recovered agent checks are covered by
+  offline fixtures. Public-key JSON can be converted to its agent address offline.
+- Continuous credential-free canary supervisor with bounded concurrent all-DEX
+  positions/orders, exact client-ID and journal reconciliation, private subscription
+  acknowledgements/snapshots/pongs, event-epoch invalidation, atomic publication,
+  withdrawal on disconnect/failure/shutdown, exclusive writer lock and durable
+  journal-directory probing. Only the exact unsubmitted canary can become ready.
+- A hash-pinned, challenge-bound operations probe contract for actual alert
+  delivery and retained recovery readiness. Its real infrastructure adapter and
+  evidence remain operator work; missing probes cannot authorize placement.
+- Safe unique temporary health files, private parent validation, backend process
+  group cleanup, and MCP storage ancestor checks even when directories are absent.
+- Read-only `gate-digest` and `evidence-digest` executor commands for preparing
+  the canonical review binding without inventing approval or execution state.
+- Dependency updates: rustls 0.23.46, webpki 0.103.16, roots 1.0.11, Tokio
+  1.54.1 and the supported signing stack above. MSRV/CI use Rust 1.94.1.
+  All nine original advisory failures are cleared from the compiled graph.
+
+New module ownership: supervisor `reconcile.rs` (pre-submission journal/venue
+agreement), `stream.rs` (unsigned connection/liveness/epoch), `probes.rs`
+(durability and external operations adapter); mainnet-services
+`bin/kms_provider.rs` (KMS CLI transport and public signature conversion).
+Runtime optional supervisor digest and service optional provider-config fields
+preserve historical digests when absent. The daemon requires the new binding.
+
+Verification: workspace offline tests, strict all-target/all-feature Clippy,
+release build and Rust 1.94.1 all-target checks passed during the review; the
+read-only mainnet REST smoke test passed. Final counts/check outcomes are recorded
+in the launch runbook: **301 offline tests passed, 4 live tests ignored**;
+the separate read-only mainnet REST test passed. Live KMS, private-account/fault exercises,
+independent recovery, three reviewed testnet sessions and frozen human-approved
+Linux release evidence remain unverified. Earlier dated sections are historical
+implementation records; this section supersedes their supervisor/custody status.
 
 ## Upstream drift: stable Clippy and Arrow/Parquet 60 — 2026-10-01
 
@@ -393,7 +580,7 @@ transport.**
 | Execution safety | Complete | Comprehensive exact risk policy, filesystem kill switch, isolated network signer, durable client IDs, bounded retry/throttle, locked journal, and lifecycle recovery |
 | Testnet execution | Feature-gated, live candidate unreviewed | Official fixed HTTPS/WebSocket endpoints, pinned SDK signer, place/cancel, private events, REST reconciliation, restart recovery, non-shipping external-signer harness, and offline reviewer attestation; one clean credentialed candidate awaits independent human review |
 | Mainnet release gate | Implemented, closed | Default-off compile gate plus evidence digest, separate credentials, explicit/manual enablement, canary, continuous health/reconciliation, alerts/audit, rollback, and dead-man checks; required evidence is incomplete |
-| Mainnet integration | Implemented, default-off and unreleased | Exact-order manual/MCP-consent executor; isolated signer and emergency watchdog implemented; custody backend, independent hosts, supervisor completion and release evidence remain outstanding |
+| Mainnet integration | Implemented, default-off and unreleased | Exact-order executor, KMS adapter, signer/watchdog and continuous canary supervisor; actual infrastructure/monitoring receipt integration and independent security/release evidence remain outstanding |
 | MCP analytics/local writes | Implemented, opt-in process | Read-only default; separate write scope; strict structured metadata, pinned executables and storage boundaries |
 | MCP trading | Implemented, gated | Explicit trade scope and mainnet flag; expiring one-use operator consent; same release/build/live gates |
 
@@ -521,8 +708,9 @@ with durable event deduplication. The default build and shipped CLI remain
 read-only. See `docs/testnet-execution-v1.md` and
 `docs/hyperliquid-testnet-runbook.md`.
 
-The nested `hypersdk-signer` feature pins `hypersdk` 0.2.15 and provides a
-Hyperliquid-aware signer adapter. Deterministic tests prove exact order/cancel
+M8 originally pinned `hypersdk` 0.2.15. The November 3 migration replaces it
+with `local-signer` / `hypercarry-signing` and modern k256; `hypersdk-signer` is
+only a deprecated feature alias. Deterministic tests prove exact order/cancel
 request preservation and recover the selected signing address. One live
 credentialed testnet candidate has now completed its bounded lifecycle.
 
@@ -866,7 +1054,7 @@ cargo test --workspace --all-features --locked
 cargo build --workspace --all-features --release --locked
 ```
 
-Current normal all-feature test result: **281 passed, 0 failed, 4 intentionally
+Current normal all-feature test result: **313 passed, 0 failed, 4 intentionally
 ignored** (includes executor and MCP subprocess integration checks).
 The ignored tests are the opt-in mainnet/testnet REST checks and mainnet/testnet
 live WebSocket recorder smoke checks. All normal recorder/replay tests are offline.
@@ -911,9 +1099,11 @@ deployment surfaced three code defects that did: the recorder was killed by a
 service manager's `SIGTERM` before finalizing its session, `apr` reported a
 contiguous-history duration only when the dataset was an exact multiple of 24
 records, and `pnl` called a window fully covered when a settlement inside it was
-missing. All three are fixed. The supervisor is the one remaining item that is
-still partly implementation; everything else is provisioning, evidence and
-approval.
+missing. All three are fixed. The November 3 supervisor and KMS implementations
+are now available, along with the receipt-backed operations probe and dependency
+remediation; real monitoring integration, provisioning, security review, evidence
+and approval remain. Use the current launch
+runbook for dependency order and acceptance criteria.
 
 1. Install the recording host from `deploy/`, which packages the hourly
    per-coin `backfill` timer, the freshness/contiguity/disk health check, the
@@ -927,16 +1117,16 @@ approval.
    Track 2 is blocked on this, not on implementation.
 3. Record two more independently reviewed clean credentialed sessions and run
    the documented disconnect, restart, private-stream, and fault exercises.
-4. Finish `hypercarry-supervisor`: reconciliation against the durable journal
-   first, then the private stream, then whatever will attest alerts, audit and
-   rollback. Until each readiness field has an observed source it stays
-   `not_ready` and the executor declines, which is the intended behaviour.
+4. Integrate the supervisor's reviewed operational probe with actual monitoring
+   and retained recovery artifacts, then exercise private disconnects, restart,
+   journal and all-DEX observations on the intended topology. Obtain fresh
+   signing-migration security review; offline tests do not authorize release.
 5. Provision and review the external mainnet signer and the watchdog driving the
    emergency response; freeze the implemented adapter/executor and complete
    release bundle after the testnet evidence passes, before human approval.
-6. Sync the public mirror with `tools/export-public.sh --push`. It has never
-   been synced; the dry run is clean and the two blockers identified before the
-   first sync (the `cargo deny` advisory and the README structure) are cleared.
+6. After separate publication authorization and secret/content review, sync the
+   filtered public tree. Its source commit differs from the private commit;
+   build the public release and bind evidence to that final public identity.
 
 ## Keeping this file current
 

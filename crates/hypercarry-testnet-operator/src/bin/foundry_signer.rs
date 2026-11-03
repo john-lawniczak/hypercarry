@@ -6,12 +6,13 @@
 
 #![warn(missing_docs)]
 
-use alloy::primitives::{Signature as AlloySignature, U256};
 use anyhow::{Context, Result, bail, ensure};
 use chrono::DateTime;
 use clap::{Parser, ValueEnum};
 use hypercarry_execution::ExecutionNetwork;
-use hypersdk::hypercore::{Action, Chain};
+use hypercarry_signing::SignatureRecovery as _;
+use hypercarry_signing::{Action, Chain};
+use hypercarry_signing::{Signature as AlloySignature, U256};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -748,7 +749,7 @@ mod tests {
         let order_hash = order
             .prehash(10_000, None, Some(expires), Chain::Testnet)
             .unwrap();
-        assert_ne!(order_hash, alloy::primitives::B256::ZERO);
+        assert_ne!(order_hash, hypercarry_signing::B256::ZERO);
 
         let cancel: Action = serde_json::from_value(json!({
             "type": "cancelByCloid",
@@ -761,7 +762,7 @@ mod tests {
         let cancel_hash = cancel
             .prehash(10_001, None, Some(expires), Chain::Testnet)
             .unwrap();
-        assert_ne!(cancel_hash, alloy::primitives::B256::ZERO);
+        assert_ne!(cancel_hash, hypercarry_signing::B256::ZERO);
         assert_ne!(order_hash, cancel_hash);
     }
 

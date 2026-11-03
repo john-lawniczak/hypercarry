@@ -21,5 +21,5 @@ pub use venue::{
     ReqwestHyperliquidTransport, TESTNET_ACKNOWLEDGEMENT, TestnetAcknowledgement,
     TestnetReliability, TransportFailure, connect_testnet_private_stream,
 };
-#[cfg(all(feature = "hypersdk-signer", feature = "testnet-execution"))]
-pub use venue::{HypersdkSignerError, HypersdkTestnetSigner};
+#[cfg(all(feature = "local-signer", feature = "testnet-execution"))]
+pub use venue::{LocalSignerError, LocalTestnetSigner};

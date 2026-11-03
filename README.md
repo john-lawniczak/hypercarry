@@ -68,8 +68,8 @@ touches no wallet, and places no orders. There is no built-in key loader
 anywhere in the workspace.
 
 Execution exists, is default-off, and lives in separate crates. No mainnet
-order has been submitted by this implementation. Production custody integration,
-parts of the supervisor and independent release evidence remain unfinished.
+order has been submitted by this implementation. Production infrastructure,
+monitoring receipt integration and independent release evidence remain unfinished.
 The release gate refuses to authorize an order until its requirements hold:
 
 - Authorization requires three independently reviewed credentialed testnet
@@ -86,15 +86,22 @@ The release gate refuses to authorize an order until its requirements hold:
 - The binary embeds its source commit and lockfile digest; one built from a
   dirty tree cannot pass preflight.
 
-The default-off `hypercarry-mainnet-services` crate supplies the signer service
-and watchdog, including bounded reduce-only recovery. Key custody remains in an
-external provider; hosts, provider integration and alert delivery still require
-provisioning. See [operational services](docs/mainnet-services-v1.md). Health supervision is partly shipped, as the
-credential-free `hypercarry-supervisor`; what it has not yet measured it reports
-as not ready, so the executor declines.
+The default-off `hypercarry-mainnet-services` crate supplies the signer service,
+AWS KMS provider adapter and watchdog, including bounded reduce-only recovery.
+Key custody remains in KMS or another external provider; hosts, keys, protected
+transport and alert delivery still require provisioning. See
+[operational services](docs/mainnet-services-v1.md). The credential-free
+`hypercarry-supervisor` now runs continuous canary reconciliation and private
+subscriptions. The supplied receipt-backed operations probe checks real alert
+delivery and recovery availability recorded by your monitoring infrastructure.
 
 **Current release decision: closed.** See
 [mainnet-release-gate-v1](docs/mainnet-release-gate-v1.md) for what remains.
+Start with [self-hosted mainnet preparation](docs/self-hosted-mainnet-v1.md):
+AWS KMS and two-host custody/recovery, verified passive installation, offline
+diagnostics and the pre-release cloud exercises. The active dependency audit is
+clear; fresh independent signing/security review remains required. Offline checks
+do not constitute a production release.
 
 Not affiliated with Hyperliquid. Not trading advice.
 
@@ -149,7 +156,7 @@ tracing go to stderr. Exit codes are stable and documented in
 - **Offline tests.** Normal runs use recorded fixtures; live REST and WebSocket
   smoke tests are opt-in and ignored by default. Golden deserialize tests break
   CI on upstream schema drift.
-- **CI gates** the declared Rust 1.93 MSRV, `cargo fmt --check`, pedantic
+- **CI gates** the declared Rust 1.94.1 MSRV, `cargo fmt --check`, pedantic
   `cargo clippy -D warnings`, tests and doctests, `cargo deny`, and an
   all-feature release build.
 
@@ -219,6 +226,13 @@ live-integration readiness record, and design-decision log.
 
 **Execution (default-off)**
 
+- [Self-hosted preparation](docs/self-hosted-mainnet-v1.md) — public operator entry point and read-only Rust examples
+- [Release bundles](docs/release-bundles-v1.md) — build, verify, stage and install without starting services
+- [AWS reference validation](docs/cloud-validation-v1.md) — passive topology, custody access check and witnessed failure exercises
+- [Release review dossier](docs/release-review-dossier-v1.md) — frozen Linux candidate and bound operational/review evidence
+- [Setup diagnostics](docs/setup-diagnostics-v1.md) — offline configuration and artifact checks
+- [Operations probe](docs/operations-probe-v1.md) — monitoring receipt and recovery artifact contract
+
 - [mainnet-release-gate-v1](docs/mainnet-release-gate-v1.md) — the authorization gate
 - [mainnet-integration-v1](docs/mainnet-integration-v1.md) — adapter, executor, required external services
 - [execution-safety-v1](docs/execution-safety-v1.md) — risk, signer isolation, durable identity
@@ -228,15 +242,16 @@ live-integration readiness record, and design-decision log.
 - [testnet-execution-evidence](docs/testnet-execution-evidence.md) — recorded session evidence
 - [adversarial-security-review-v1](docs/adversarial-security-review-v1.md) — findings and accepted backlog
 
-The optional `hypersdk-signer` feature pins the signing SDK inside
-`hypercarry-hyperliquid` and is absent from the read-only CLI. The testnet
+The optional `local-signer` feature uses `hypercarry-signing` with k256 0.14
+and crypto-bigint 0.7.10; it is absent from the read-only CLI. Fresh security
+review is required before mainnet; see [migration handoff](docs/signing-migration-review.md). The testnet
 operator does not custody keys; a separate non-published Foundry-keystore
 provider can serve the signer protocol by delegating interactive prehash
 signing to `cast`, and never accepts a raw key or password.
 
 ## Requirements
 
-Stable Rust 1.93 or newer; `rust-toolchain.toml` selects the stable channel.
+Stable Rust 1.94.1 or newer; `rust-toolchain.toml` selects the stable channel.
 
 ## License
 

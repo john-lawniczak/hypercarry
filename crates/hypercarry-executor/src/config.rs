@@ -38,7 +38,29 @@ pub struct Config {
 pub fn load(path: &Path) -> Result<Config> {
     let config: Config = read_json(path)?;
     validate(&config)?;
+    validate_runtime_inputs(&config.runtime, &[path])?;
     Ok(config)
+}
+
+/// Keep release evidence and approval files separate from runtime writers.
+/// # Errors
+/// Rejects aliases between inputs, mutable state and the supervisor lock.
+pub fn validate_runtime_inputs(r: &RuntimeConfig, inputs: &[&Path]) -> Result<()> {
+    let supervisor_lock = r.health_file.with_extension("supervisor.lock");
+    hypercarry_mainnet_config::validate_disjoint_paths(
+        [
+            &r.signer_socket,
+            &r.journal,
+            &r.health_file,
+            &r.heartbeat,
+            &r.kill_switch,
+            &supervisor_lock,
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::as_path)
+        .chain(r.executor_lease.as_deref())
+        .chain(inputs.iter().copied()),
+    )
 }
 
 /// Rejects any configuration this process must not execute.
@@ -123,13 +145,25 @@ pub fn validate(config: &Config) -> Result<()> {
         (1_000..=10_000).contains(&r.reconciliation_interval_ms),
         "invalid reconciliation interval"
     );
+    validate_runtime_paths(r)
+}
+
+fn validate_runtime_paths(r: &RuntimeConfig) -> Result<()> {
+    let supervisor_lock = r.health_file.with_extension("supervisor.lock");
     let paths = [
         &r.signer_socket,
         &r.journal,
         &r.health_file,
         &r.heartbeat,
         &r.kill_switch,
+        &supervisor_lock,
     ];
+    hypercarry_mainnet_config::validate_disjoint_paths(
+        paths
+            .iter()
+            .map(|p| p.as_path())
+            .chain(r.executor_lease.as_deref()),
+    )?;
     for (index, path) in paths.iter().enumerate() {
         ensure!(path.is_absolute(), "runtime paths must be absolute");
         validate_private_path(path)?;
@@ -197,4 +231,46 @@ fn hex(bytes: &[u8]) -> String {
             ]
         })
         .collect()
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+
+    #[test]
+    fn evidence_and_approval_paths_cannot_alias_lease_or_lock_even_before_creation() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let mut runtime: RuntimeConfig = serde_json::from_str(include_str!(
+            "../../../docs/mainnet-runtime-config.example.json"
+        ))
+        .unwrap();
+        runtime.signer_socket = root.join("socket");
+        runtime.journal = root.join("journal");
+        runtime.health_file = root.join("health");
+        runtime.heartbeat = root.join("heartbeat");
+        runtime.kill_switch = root.join("STOP");
+        runtime.executor_lease = Some(root.join("lease"));
+        let evidence = root.join("evidence");
+        assert!(validate_runtime_inputs(&runtime, &[evidence.as_path()]).is_ok());
+        for collision in [
+            runtime.journal.clone(),
+            runtime.executor_lease.clone().unwrap(),
+            runtime.health_file.with_extension("supervisor.lock"),
+        ] {
+            assert!(
+                validate_runtime_inputs(&runtime, &[evidence.as_path(), collision.as_path()])
+                    .is_err()
+            );
+        }
+        std::fs::write(&evidence, "retained evidence").unwrap();
+        let alias = root.join("approval");
+        std::fs::hard_link(&evidence, &alias).unwrap();
+        assert!(validate_runtime_inputs(&runtime, &[evidence.as_path(), alias.as_path()]).is_err());
+        assert_eq!(
+            std::fs::read_to_string(evidence).unwrap(),
+            "retained evidence"
+        );
+        assert!(!runtime.executor_lease.unwrap().exists());
+    }
 }

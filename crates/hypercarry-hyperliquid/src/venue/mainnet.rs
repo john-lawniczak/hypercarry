@@ -278,9 +278,9 @@ pub(super) fn verify_mainnet_signature(
     request: &HyperliquidSigningRequest,
     address: &str,
 ) -> Result<(), ExecutionError> {
-    let action: hypersdk::hypercore::Action = serde_json::from_value(request.action.clone())
+    let action: hypercarry_signing::Action = serde_json::from_value(request.action.clone())
         .map_err(|_| venue_schema("invalid mainnet signing action"))?;
-    let signature: hypersdk::hypercore::Signature =
+    let signature: hypercarry_signing::WireSignature =
         serde_json::from_value(signed["signature"].clone())
             .map_err(|_| venue_schema("invalid mainnet signature encoding"))?;
     let expiry = i64::try_from(request.expires_after)
@@ -293,7 +293,7 @@ pub(super) fn verify_mainnet_signature(
             request.nonce,
             None,
             Some(expiry),
-            hypersdk::hypercore::Chain::Mainnet,
+            hypercarry_signing::Chain::Mainnet,
         )
         .map_err(|_| venue_schema("mainnet signature recovery failed"))?;
     if recovered.to_string().to_ascii_lowercase() != address {
@@ -375,6 +375,7 @@ mod tests {
     use hypercarry_execution::{
         InMemoryJournal, MainnetReleaseConfig, MainnetReleaseEvidence, OperationalHealth, Readiness,
     };
+    use hypercarry_signing::DigestSigner as _;
     use std::{cell::Cell, rc::Rc};
 
     #[derive(Clone)]
@@ -457,7 +458,7 @@ mod tests {
             if self.break_health {
                 self.healthy.set(false);
             }
-            let action: hypersdk::hypercore::Action =
+            let action: hypercarry_signing::Action =
                 serde_json::from_value(request.action.clone()).unwrap();
             let signed = action
                 .sign_sync(
@@ -468,9 +469,9 @@ mod tests {
                         i64::try_from(request.expires_after).unwrap(),
                     ),
                     if self.wrong_domain {
-                        hypersdk::hypercore::Chain::Testnet
+                        hypercarry_signing::Chain::Testnet
                     } else {
-                        hypersdk::hypercore::Chain::Mainnet
+                        hypercarry_signing::Chain::Mainnet
                     },
                 )
                 .unwrap();
@@ -480,11 +481,14 @@ mod tests {
             Ok(value)
         }
     }
-    fn local_signer() -> hypersdk::hypercore::PrivateKeySigner {
+    fn local_signer() -> hypercarry_signing::SigningKey {
         // Public deterministic SDK test key; never funded or used for live requests.
-        "e908f86dbb4d55ac876378565aafeabc187f6690f046459397b17d9b9a19688e"
-            .parse()
-            .unwrap()
+        hypercarry_signing::SigningKey::from_slice(
+            &"e908f86dbb4d55ac876378565aafeabc187f6690f046459397b17d9b9a19688e"
+                .parse::<hypercarry_signing::B256>()
+                .unwrap()[..],
+        )
+        .unwrap()
     }
     #[derive(Default)]
     struct Transport {

@@ -5,7 +5,7 @@ all-features = true
 version = 2
 yanked = "deny"
 ignore = [
-    # Transitive through hypersdk -> Alloy. This advisory reports only that
+    # Transitive through alloy-primitives (public wire types only). This advisory reports only that
     # paste is archived; it is not a vulnerability and has no safe upgrade.
     "RUSTSEC-2024-0436",
 ]
@@ -36,6 +36,14 @@ license-files = [
 ]
 
 [bans]
+# Prevent feature unification from re-enabling Alloy's legacy crypto stack.
+deny = [
+    { name = "crypto-bigint", version = "<0.7.10" },
+    { name = "k256", version = "<0.14.0" },
+    { name = "elliptic-curve", version = "<0.14.3" },
+    { name = "hypersdk" },
+    { name = "alloy-signer" },
+]
 # The workspace already spans networking/storage generations. Advisories,
 # licenses, wildcard dependencies, and registry provenance remain enforced.
 multiple-versions = "allow"

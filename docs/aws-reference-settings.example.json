@@ -1,0 +1,8 @@
+{
+  "VpcId": "vpc-00000000000000000",
+  "ExecutorSubnetId": "subnet-00000000000000001",
+  "RecoverySubnetId": "subnet-00000000000000002",
+  "ImageId": "ami-00000000000000000",
+  "ImageOwnerId": "000000000000",
+  "InstanceType": "m6i.large"
+}

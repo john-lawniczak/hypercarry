@@ -75,6 +75,12 @@ bundle; the gate does not infer approval from prior operation.
 
 ## Current decision
 
+The [2026-11-03 launch runbook](mainnet-launch-runbook.md) is the current
+deployment checklist. The KMS adapter and continuous supervisor are implemented
+but unprovisioned. The signing migration cleared the dependency advisory
+failures; fresh independent security review and operational evidence remain
+required before release.
+
 **Closed.** `docs/testnet-execution-evidence.md` records deterministic M8 tests
 and one clean credentialed candidate, but that candidate has no independent
 human attestation and the required three-session set is incomplete. There is no
@@ -82,3 +88,14 @@ frozen release bundle, security-review record, rollback artifact, final evidence
 digest, or human approval. The implemented integration also requires reviewed
 external mainnet signing, health supervision, alerts and watchdog services. Mainnet must not be enabled
 or represented as production-ready.
+
+## Signing migration review requirement — 2026-11-03
+
+The migration to k256 0.14 / crypto-bigint 0.7.10 requires a fresh independent
+execution security review. Prior reports and session evidence do not establish
+coverage of the new signing codec or custody/recovery integration. Follow the
+[review handoff](signing-migration-review.md), repeat credentialed testnet and
+failure exercises on the new artifacts, and bind the report in
+`reviewed_bundle.execution_security_review` before the human release decision.
+The executor's existing clean-source, Cargo.lock, binary and evidence digest
+checks remain mandatory. No release approval was created by this migration.
