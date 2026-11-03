@@ -5,13 +5,14 @@ use crate::{
     policy::{ServicePolicy, flatten_action, validate_request},
     require_artifact, write_private,
 };
-use alloy::primitives::Signature;
 use anyhow::{Context, Result, ensure};
 use chrono::DateTime;
 use fs2::FileExt;
 use hypercarry_execution::{ClientOrderId, ExecutionNetwork, Side};
 use hypercarry_mainnet_config::{RuntimeConfig, read_json, validate_private_path};
-use hypersdk::hypercore::{Action, Chain};
+use hypercarry_signing::Signature;
+use hypercarry_signing::SignatureRecovery as _;
+use hypercarry_signing::{Action, Chain};
 use reqwest::blocking::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

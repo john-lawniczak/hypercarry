@@ -10,13 +10,14 @@ supervision and the reviewed release digest. None has been invented here.
 1. Correct submission-frequency accounting (implemented).
 2. Build the isolated signer and independent watchdog (implemented here).
 3. Add MCP reads/local writes, then single-use approved trading.
-4. Provision the chosen key backend and separate hosts; finish observed
-   supervisor readiness; complete independent testnet/security/rollback review.
+4. Provision the chosen key backend and separate hosts; integrate the reviewed
+   supervisor operations probe; complete independent testnet/security/rollback review.
 5. Build from the final clean commit, freeze artifacts/configuration and approve
    that digest. Run the bounded canary only after preflight and live gates pass.
 
-`hypercarry-mainnet-services` supplies `hypercarry-mainnet-signer` and
-`hypercarry-watchdog`, both behind default-off `mainnet-execution`. The executor
+`hypercarry-mainnet-services` supplies `hypercarry-mainnet-signer`,
+`hypercarry-kms-provider` and `hypercarry-watchdog`, behind default-off
+`mainnet-execution`. The executor
 now exposes shared configuration, signer client and safety checks as a library.
 The analytics CLI gains no trading dependency.
 
@@ -46,10 +47,21 @@ line on stdin:
 
 It returns exactly one 65-byte recoverable Ethereum signature as a hexadecimal
 string on stdout, then exits. The service computes the mainnet-domain prehash
-with the pinned SDK and independently recovers the configured address. It never
+with the isolated `hypercarry-signing` codec and independently recovers the configured address. It never
 logs provider output or signatures. The process has a cleared environment,
 bounded output and timeout; the backend must not leave child processes running.
 Use a hardware/KMS adapter appropriate to the operator's chosen custody system.
+
+An AWS KMS/EC2 workload-identity adapter is now supplied as
+`hypercarry-kms-provider`. See [the launch runbook](mainnet-launch-runbook.md)
+and [KMS configuration](kms-provider-config.example.json). Optional
+`backend_config` and `backend_config_sha256` fields bind provider settings into
+the service policy; the signer verifies those exact bytes before every call.
+The provider signs the digest without rehashing, normalizes DER signatures and
+recovers the pinned agent. It needs a real provisioned KMS key, agent approval,
+instance role and pinned AWS CLI distribution. No production custody call has
+been made during development. Backend timeouts kill the process group, including
+ordinary provider descendants, while retaining the consumed nonce/reservation.
 No backend credential, private key, password or fake production provider is
 included. Choosing and configuring that backend requires the deployment owner.
 
@@ -127,3 +139,13 @@ emergency. Inspect and reconcile before restarting.
 
 References: [exchange actions](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint),
 [signer nonces](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets).
+
+All configured authority paths must be absolute and free of parent traversal.
+Shared validation resolves existing ancestors (including when the leaf does not
+yet exist) and rejects duplicate targets or hard-linked inputs/state. Loaded
+configuration and release-evidence paths are included alongside derived locks.
+
+Run [offline setup diagnostics](setup-diagnostics-v1.md) before preparing the
+release decision. `hypercarry-doctor` reports configuration/artifact/timeout
+errors without contacting the signer or venue; KMS `--check-config` checks the
+local CLI and ARN configuration without signing. Neither command opens a gate.

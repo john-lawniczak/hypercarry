@@ -102,6 +102,9 @@ pub struct RuntimeConfig {
     /// watchdog on an independent host. Included in new reviewed digests.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_lease: Option<PathBuf>,
+    /// Reviewed supervisor settings, including operational probe identities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor_policy_digest: Option<String>,
 }
 
 impl RuntimeConfig {
@@ -146,6 +149,56 @@ fn hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Reject aliases between authority inputs and mutable state, including paths
+/// that do not exist yet. Existing ancestors are resolved before comparison.
+///
+/// # Errors
+/// Rejects relative/traversing paths, unresolvable ancestors, duplicate targets
+/// and (on Unix) hard links to the same existing inode.
+pub fn validate_disjoint_paths<'a>(paths: impl IntoIterator<Item = &'a Path>) -> Result<()> {
+    let mut resolved = std::collections::BTreeSet::new();
+    #[cfg(unix)]
+    let mut inodes = std::collections::BTreeSet::new();
+    for path in paths {
+        ensure!(path.is_absolute(), "authority paths must be absolute");
+        ensure!(
+            !path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir)),
+            "authority paths must not contain parent traversal"
+        );
+        let mut ancestor = path;
+        let mut suffix = Vec::new();
+        loop {
+            match std::fs::symlink_metadata(ancestor) {
+                Ok(_) => break,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    suffix.push(ancestor.file_name().context("path has no filename")?);
+                    ancestor = ancestor.parent().context("path has no existing ancestor")?;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        let mut canonical = std::fs::canonicalize(ancestor)?;
+        for component in suffix.into_iter().rev() {
+            canonical.push(component);
+        }
+        ensure!(
+            resolved.insert(canonical),
+            "authority paths alias the same target"
+        );
+        #[cfg(unix)]
+        if let Ok(meta) = std::fs::metadata(path) {
+            use std::os::unix::fs::MetadataExt;
+            ensure!(
+                inodes.insert((meta.dev(), meta.ino())),
+                "authority paths share an inode"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Requires a runtime path to live in a private directory and not be a symlink.
 ///
 /// # Errors
@@ -188,6 +241,30 @@ pub fn validate_private_path(_: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn authority_paths_reject_absent_aliases_hardlinks_and_traversal() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let alias = root.join("alias");
+        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        assert!(
+            validate_disjoint_paths([
+                root.join("missing/leaf").as_path(),
+                alias.join("missing/leaf").as_path()
+            ])
+            .is_err()
+        );
+        assert!(validate_disjoint_paths([root.join("x/../target").as_path()]).is_err());
+        let first = root.join("first");
+        let second = root.join("second");
+        assert!(validate_disjoint_paths([first.as_path(), second.as_path()]).is_ok());
+        std::fs::write(&first, "retain").unwrap();
+        std::fs::hard_link(&first, &second).unwrap();
+        assert!(validate_disjoint_paths([first.as_path(), second.as_path()]).is_err());
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "retain");
+    }
+
     fn runtime() -> RuntimeConfig {
         serde_json::from_str(include_str!(
             "../../../docs/mainnet-runtime-config.example.json"
@@ -212,6 +289,27 @@ mod tests {
             runtime().digest().unwrap(),
             "29691197cf67f554c3f662787b4e5a6b57b94f3a5cbd6c53b3b6d0203b84fc3b"
         );
+    }
+
+    #[test]
+    fn order_decimals_reject_garbage_beyond_the_rounding_position() {
+        // rust_decimal 1.43 validates the tail that older parsing could drop
+        // after reaching its precision limit. Exercise our actual wire schema.
+        let original = serde_json::to_value(runtime()).unwrap();
+        for field in ["limit_price", "quantity"] {
+            for invalid in [
+                "1.00000000000000000000000000005zzz",
+                "79228162514264337593543950335.4zzz",
+                "1.00000000000000000000000000005.5",
+            ] {
+                let mut value = original.clone();
+                value["order"][field] = serde_json::Value::String(invalid.into());
+                assert!(
+                    serde_json::from_value::<RuntimeConfig>(value).is_err(),
+                    "malformed {field} must not be rounded into an accepted order"
+                );
+            }
+        }
     }
 
     #[test]

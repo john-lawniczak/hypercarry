@@ -39,6 +39,16 @@ enum Command {
         #[arg(long)]
         runtime: PathBuf,
     },
+    /// Print the canonical gate digest offline; does not approve or execute it.
+    GateDigest {
+        #[arg(long)]
+        config: PathBuf,
+    },
+    /// Hash a draft evidence payload without creating a human approval.
+    EvidenceDigest {
+        #[arg(long)]
+        evidence: PathBuf,
+    },
     /// Validate a reviewed bundle and build identity offline; does not contact signer or venue.
     Preflight {
         #[arg(long)]
@@ -147,6 +157,30 @@ fn run(args: Args) -> Result<()> {
             println!("{}", runtime.digest()?);
             return Ok(());
         }
+        Command::GateDigest { config } => {
+            let config: Config = config::read_json(&config)?;
+            ensure!(
+                config.schema_version == 1,
+                "unsupported configuration schema"
+            );
+            config.gate.validate()?;
+            ensure!(
+                config.gate.integration_config_digest.as_deref() == Some(&config.runtime.digest()?),
+                "runtime/gate binding mismatch"
+            );
+            println!("{}", config.gate.review_digest()?);
+            eprintln!(
+                "Digest only: build identity and operational readiness have not been checked."
+            );
+            return Ok(());
+        }
+        Command::EvidenceDigest { evidence } => {
+            let evidence: MainnetReleaseEvidence = config::read_json(&evidence)?;
+            ensure!(evidence.schema_version == 2, "unsupported evidence schema");
+            println!("{}", evidence.evidence_digest()?);
+            eprintln!("Digest only: evidence has not been approved or validated for release.");
+            return Ok(());
+        }
         Command::Preflight { config, evidence } => (config, evidence, Operation::Preflight),
         Command::Run {
             config,
@@ -160,6 +194,10 @@ fn run(args: Args) -> Result<()> {
         Command::ApproveMcp { .. } | Command::RunApproved { .. } => unreachable!("handled above"),
     };
     let config = config::load(&config_path)?;
+    config::validate_runtime_inputs(
+        &config.runtime,
+        &[config_path.as_path(), evidence_path.as_path()],
+    )?;
     let evidence = MainnetReleaseEvidence::load(evidence_path)?;
     config::verify_build(&config, &evidence)?;
     let evidence_digest = evidence.evidence_digest()?;
@@ -390,6 +428,11 @@ fn issue_mcp_approval(
     ttl_seconds: u32,
 ) -> Result<()> {
     let config = config::load(config_path)?;
+    let consumed = output.with_extension("consumed");
+    config::validate_runtime_inputs(
+        &config.runtime,
+        &[config_path, evidence_path, output, consumed.as_path()],
+    )?;
     let evidence = MainnetReleaseEvidence::load(evidence_path)?;
     config::verify_build(&config, &evidence)?;
     let digest = evidence.evidence_digest()?;
@@ -427,6 +470,16 @@ fn execute_approved(
     operation: ApprovalOperation,
 ) -> Result<()> {
     let config = config::load(config_path)?;
+    let consumed = approval_path.with_extension("consumed");
+    config::validate_runtime_inputs(
+        &config.runtime,
+        &[
+            config_path,
+            evidence_path,
+            approval_path,
+            consumed.as_path(),
+        ],
+    )?;
     let evidence = MainnetReleaseEvidence::load(evidence_path)?;
     config::verify_build(&config, &evidence)?;
     let digest = evidence.evidence_digest()?;

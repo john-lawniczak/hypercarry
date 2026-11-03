@@ -1,0 +1,611 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Passive Hypercarry canary hosts. No software, transport, monitoring, approval or trading is activated.",
+  "Parameters": {
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "ExecutorSubnetId": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "RecoverySubnetId": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "ImageId": {
+      "Type": "AWS::EC2::Image::Id",
+      "Description": "Reviewed x86_64 Linux AMI with systemd, SSM agent and /dev/sda1 root."
+    },
+    "ImageOwnerId": {
+      "Type": "String",
+      "AllowedPattern": "[0-9]{12}",
+      "Description": "Reviewed AMI publisher; verified by offline preparation."
+    },
+    "InstanceType": {
+      "Type": "String",
+      "Default": "m6i.large",
+      "AllowedValues": [
+        "m6i.large",
+        "m6i.xlarge"
+      ]
+    }
+  },
+  "Rules": {
+    "SeparateSubnets": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "ExecutorSubnetId"
+                  },
+                  {
+                    "Ref": "RecoverySubnetId"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "Hosts need different subnets; offline preparation additionally verifies distinct AZs."
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "ExecutorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+          }
+        ]
+      }
+    },
+    "ExecutorProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "ExecutorRole"
+          }
+        ]
+      }
+    },
+    "ExecutorGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Executor private host; HTTPS egress, peer-only SSH transport",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Venue HTTPS/WSS and AWS APIs via operator-provided egress"
+          }
+        ]
+      }
+    },
+    "ExecutorPeerIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "ExecutorGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "RecoveryGroup",
+            "GroupId"
+          ]
+        }
+      }
+    },
+    "ExecutorPeerEgress": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "ExecutorGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "DestinationSecurityGroupId": {
+          "Fn::GetAtt": [
+            "RecoveryGroup",
+            "GroupId"
+          ]
+        }
+      }
+    },
+    "ExecutorLaunch": {
+      "Type": "AWS::EC2::LaunchTemplate",
+      "Properties": {
+        "LaunchTemplateData": {
+          "ImageId": {
+            "Ref": "ImageId"
+          },
+          "InstanceType": {
+            "Ref": "InstanceType"
+          },
+          "IamInstanceProfile": {
+            "Arn": {
+              "Fn::GetAtt": [
+                "ExecutorProfile",
+                "Arn"
+              ]
+            }
+          },
+          "MetadataOptions": {
+            "HttpEndpoint": "enabled",
+            "HttpTokens": "required",
+            "HttpPutResponseHopLimit": 1,
+            "InstanceMetadataTags": "disabled"
+          },
+          "Monitoring": {
+            "Enabled": true
+          },
+          "BlockDeviceMappings": [
+            {
+              "DeviceName": "/dev/sda1",
+              "Ebs": {
+                "Encrypted": true,
+                "VolumeSize": 30,
+                "VolumeType": "gp3",
+                "DeleteOnTermination": true
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "DeviceIndex": 0,
+              "AssociatePublicIpAddress": false,
+              "SubnetId": {
+                "Ref": "ExecutorSubnetId"
+              },
+              "Groups": [
+                {
+                  "Fn::GetAtt": [
+                    "ExecutorGroup",
+                    "GroupId"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "ExecutorHost": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "LaunchTemplate": {
+          "LaunchTemplateId": {
+            "Ref": "ExecutorLaunch"
+          },
+          "Version": {
+            "Fn::GetAtt": [
+              "ExecutorLaunch",
+              "LatestVersionNumber"
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-executor"
+            }
+          },
+          {
+            "Key": "HypercarryRole",
+            "Value": "executor"
+          }
+        ]
+      }
+    },
+    "ExecutorState": {
+      "Type": "AWS::EC2::Volume",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::GetAtt": [
+            "ExecutorHost",
+            "AvailabilityZone"
+          ]
+        },
+        "Encrypted": true,
+        "Size": 20,
+        "VolumeType": "gp3",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-executor-state"
+            }
+          }
+        ]
+      }
+    },
+    "ExecutorStateAttachment": {
+      "Type": "AWS::EC2::VolumeAttachment",
+      "Properties": {
+        "Device": "/dev/sdf",
+        "InstanceId": {
+          "Ref": "ExecutorHost"
+        },
+        "VolumeId": {
+          "Ref": "ExecutorState"
+        }
+      }
+    },
+    "RecoveryRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+          }
+        ]
+      }
+    },
+    "RecoveryProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "RecoveryRole"
+          }
+        ]
+      }
+    },
+    "RecoveryGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Recovery private host; HTTPS egress, peer-only SSH transport",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Venue HTTPS/WSS and AWS APIs via operator-provided egress"
+          }
+        ]
+      }
+    },
+    "RecoveryPeerIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "RecoveryGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "ExecutorGroup",
+            "GroupId"
+          ]
+        }
+      }
+    },
+    "RecoveryPeerEgress": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "RecoveryGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "DestinationSecurityGroupId": {
+          "Fn::GetAtt": [
+            "ExecutorGroup",
+            "GroupId"
+          ]
+        }
+      }
+    },
+    "RecoveryLaunch": {
+      "Type": "AWS::EC2::LaunchTemplate",
+      "Properties": {
+        "LaunchTemplateData": {
+          "ImageId": {
+            "Ref": "ImageId"
+          },
+          "InstanceType": {
+            "Ref": "InstanceType"
+          },
+          "IamInstanceProfile": {
+            "Arn": {
+              "Fn::GetAtt": [
+                "RecoveryProfile",
+                "Arn"
+              ]
+            }
+          },
+          "MetadataOptions": {
+            "HttpEndpoint": "enabled",
+            "HttpTokens": "required",
+            "HttpPutResponseHopLimit": 1,
+            "InstanceMetadataTags": "disabled"
+          },
+          "Monitoring": {
+            "Enabled": true
+          },
+          "BlockDeviceMappings": [
+            {
+              "DeviceName": "/dev/sda1",
+              "Ebs": {
+                "Encrypted": true,
+                "VolumeSize": 30,
+                "VolumeType": "gp3",
+                "DeleteOnTermination": true
+              }
+            }
+          ],
+          "NetworkInterfaces": [
+            {
+              "DeviceIndex": 0,
+              "AssociatePublicIpAddress": false,
+              "SubnetId": {
+                "Ref": "RecoverySubnetId"
+              },
+              "Groups": [
+                {
+                  "Fn::GetAtt": [
+                    "RecoveryGroup",
+                    "GroupId"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "RecoveryHost": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "LaunchTemplate": {
+          "LaunchTemplateId": {
+            "Ref": "RecoveryLaunch"
+          },
+          "Version": {
+            "Fn::GetAtt": [
+              "RecoveryLaunch",
+              "LatestVersionNumber"
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-recovery"
+            }
+          },
+          {
+            "Key": "HypercarryRole",
+            "Value": "recovery"
+          }
+        ]
+      }
+    },
+    "RecoveryState": {
+      "Type": "AWS::EC2::Volume",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::GetAtt": [
+            "RecoveryHost",
+            "AvailabilityZone"
+          ]
+        },
+        "Encrypted": true,
+        "Size": 20,
+        "VolumeType": "gp3",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${AWS::StackName}-recovery-state"
+            }
+          }
+        ]
+      }
+    },
+    "RecoveryStateAttachment": {
+      "Type": "AWS::EC2::VolumeAttachment",
+      "Properties": {
+        "Device": "/dev/sdf",
+        "InstanceId": {
+          "Ref": "RecoveryHost"
+        },
+        "VolumeId": {
+          "Ref": "RecoveryState"
+        }
+      }
+    },
+    "SigningKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": "Hypercarry reviewed agent signing key; retain on stack deletion",
+        "KeySpec": "ECC_SECG_P256K1",
+        "KeyUsage": "SIGN_VERIFY",
+        "PendingWindowInDays": 30,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AccountAdministrationAndIAMDelegation",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    },
+    "RecoveryKeyAccess": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "HypercarrySingleSigningKey",
+        "Roles": [
+          {
+            "Ref": "RecoveryRole"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kms:GetPublicKey",
+                "kms:Sign"
+              ],
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SigningKey",
+                  "Arn"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ExecutorSigningDeny": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "HypercarryNoDirectSigning",
+        "Roles": [
+          {
+            "Ref": "ExecutorRole"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Action": [
+                "kms:Sign"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ExecutorInstanceId": {
+      "Value": {
+        "Ref": "ExecutorHost"
+      }
+    },
+    "ExecutorStateVolumeId": {
+      "Value": {
+        "Ref": "ExecutorState"
+      }
+    },
+    "ExecutorPrivateIp": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ExecutorHost",
+          "PrivateIp"
+        ]
+      }
+    },
+    "RecoveryInstanceId": {
+      "Value": {
+        "Ref": "RecoveryHost"
+      }
+    },
+    "RecoveryStateVolumeId": {
+      "Value": {
+        "Ref": "RecoveryState"
+      }
+    },
+    "RecoveryPrivateIp": {
+      "Value": {
+        "Fn::GetAtt": [
+          "RecoveryHost",
+          "PrivateIp"
+        ]
+      }
+    },
+    "SigningKeyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "SigningKey",
+          "Arn"
+        ]
+      }
+    },
+    "ReviewedImageOwnerId": {
+      "Value": {
+        "Ref": "ImageOwnerId"
+      }
+    }
+  }
+}

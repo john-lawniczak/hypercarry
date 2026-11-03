@@ -1,6 +1,7 @@
 //! Explicitly enabled mainnet signing and emergency-response services.
 #![cfg(feature = "mainnet-execution")]
 
+pub mod doctor;
 pub mod policy;
 pub mod provider;
 pub mod watchdog;
@@ -66,6 +67,31 @@ pub fn load(
     let config = config::load(config_path)?;
     let policy: ServicePolicy = read_json(policy_path)?;
     policy.validate(&config.runtime)?;
+    let r = &config.runtime;
+    let signer_lock = policy.signer_state.with_extension("lock");
+    let watchdog_lock = policy.watchdog_state.with_extension("lock");
+    let supervisor_lock = r.health_file.with_extension("supervisor.lock");
+    hypercarry_mainnet_config::validate_disjoint_paths(
+        [
+            config_path,
+            policy_path,
+            evidence_path,
+            r.signer_socket.as_path(),
+            &r.journal,
+            &r.health_file,
+            &r.heartbeat,
+            &r.kill_switch,
+            &policy.signer_state,
+            &policy.watchdog_state,
+            &policy.executor_lease,
+            &signer_lock,
+            &watchdog_lock,
+            &supervisor_lock,
+            &policy.backend,
+        ]
+        .into_iter()
+        .chain(policy.backend_config.as_deref()),
+    )?;
     ensure!(
         config.runtime.services_policy_digest.as_deref() == Some(&digest(&policy)?),
         "service policy is not bound to reviewed runtime"
@@ -127,6 +153,19 @@ pub fn require_artifact(path: &Path, expected: &str) -> Result<()> {
     ensure!(
         artifact_digest(path)? == expected,
         "artifact digest mismatch"
+    );
+    Ok(())
+}
+
+/// Verify a pinned executable without invoking it.
+/// # Errors
+/// Rejects untrusted bytes or missing Unix execute permissions.
+pub fn require_executable(path: &Path, expected: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    require_artifact(path, expected)?;
+    ensure!(
+        fs::metadata(path)?.permissions().mode() & 0o111 != 0,
+        "artifact is not executable"
     );
     Ok(())
 }

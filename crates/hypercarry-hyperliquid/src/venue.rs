@@ -187,34 +187,34 @@ pub trait HyperliquidL1Signer {
     fn sign_l1_action(&self, request: &HyperliquidSigningRequest) -> Result<Value, Self::Error>;
 }
 
-/// Secret-free error from the optional hypersdk signer adapter.
-#[cfg(feature = "hypersdk-signer")]
+/// Secret-free error from the optional local signer adapter.
+#[cfg(feature = "local-signer")]
 #[derive(Debug)]
-pub struct HypersdkSignerError(&'static str);
+pub struct LocalSignerError(&'static str);
 
-#[cfg(feature = "hypersdk-signer")]
-impl fmt::Display for HypersdkSignerError {
+#[cfg(feature = "local-signer")]
+impl fmt::Display for LocalSignerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.0)
     }
 }
 
-#[cfg(feature = "hypersdk-signer")]
-impl Error for HypersdkSignerError {}
+#[cfg(feature = "local-signer")]
+impl Error for LocalSignerError {}
 
-/// Execution-only adapter around a caller-constructed hypersdk-compatible
+/// Execution-only adapter around a caller-constructed digest
 /// signer. Hypercarry never loads or parses its key material.
-#[cfg(feature = "hypersdk-signer")]
-pub struct HypersdkTestnetSigner<S> {
+#[cfg(feature = "local-signer")]
+pub struct LocalTestnetSigner<S> {
     signer: S,
     key_id: String,
     signer_address: String,
 }
 
-#[cfg(feature = "hypersdk-signer")]
-impl<S> HypersdkTestnetSigner<S>
+#[cfg(feature = "local-signer")]
+impl<S> LocalTestnetSigner<S>
 where
-    S: alloy::signers::SignerSync + alloy::signers::Signer,
+    S: hypercarry_signing::DigestSigner,
 {
     /// Wraps a signer already created by the host application.
     ///
@@ -234,12 +234,12 @@ where
     }
 }
 
-#[cfg(feature = "hypersdk-signer")]
-impl<S> HyperliquidL1Signer for HypersdkTestnetSigner<S>
+#[cfg(feature = "local-signer")]
+impl<S> HyperliquidL1Signer for LocalTestnetSigner<S>
 where
-    S: alloy::signers::SignerSync + alloy::signers::Signer,
+    S: hypercarry_signing::DigestSigner,
 {
-    type Error = HypersdkSignerError;
+    type Error = LocalSignerError;
 
     fn network(&self) -> ExecutionNetwork {
         ExecutionNetwork::Testnet
@@ -255,25 +255,31 @@ where
 
     fn sign_l1_action(&self, request: &HyperliquidSigningRequest) -> Result<Value, Self::Error> {
         if request.network() != ExecutionNetwork::Testnet {
-            return Err(HypersdkSignerError("hypersdk signer is testnet-only"));
+            return Err(LocalSignerError("local signer is testnet-only"));
         }
-        let action: hypersdk::hypercore::Action = serde_json::from_value(request.action().clone())
-            .map_err(|_| HypersdkSignerError("unsupported Hyperliquid action"))?;
+        let action: hypercarry_signing::Action =
+            serde_json::from_value(request.action().clone())
+                .map_err(|_| LocalSignerError("unsupported Hyperliquid action"))?;
         let expires_after_ms = i64::try_from(request.expires_after())
-            .map_err(|_| HypersdkSignerError("action expiry exceeds i64"))?;
+            .map_err(|_| LocalSignerError("action expiry exceeds i64"))?;
         let expires_after = chrono::DateTime::from_timestamp_millis(expires_after_ms)
-            .ok_or(HypersdkSignerError("action expiry is invalid"))?;
+            .ok_or(LocalSignerError("action expiry is invalid"))?;
         let signed = action
             .sign_sync(
                 &self.signer,
                 request.nonce(),
                 None,
                 Some(expires_after),
-                hypersdk::hypercore::Chain::Testnet,
+                hypercarry_signing::Chain::Testnet,
             )
-            .map_err(|_| HypersdkSignerError("hypersdk L1 signing failed"))?;
-        serde_json::to_value(signed)
-            .map_err(|_| HypersdkSignerError("hypersdk request serialization failed"))
+            .map_err(|_| LocalSignerError("local L1 signing failed"))?;
+        let mut value = serde_json::to_value(&signed)
+            .map_err(|_| LocalSignerError("local request serialization failed"))?;
+        // U256 JSON omits leading zeroes; the provider contract requires full
+        // 32-byte scalars even when the numeric value is shorter.
+        value["signature"]["r"] = format!("0x{:064x}", signed.signature.r).into();
+        value["signature"]["s"] = format!("0x{:064x}", signed.signature.s).into();
+        Ok(value)
     }
 }
 
@@ -2451,16 +2457,49 @@ mod tests {
         assert!(validate_signed_request(&vault, &expected).is_err());
     }
 
-    #[cfg(feature = "hypersdk-signer")]
+    #[cfg(feature = "local-signer")]
     #[test]
-    fn hypersdk_signer_produces_recoverable_order_and_cancel_requests() {
-        use std::str::FromStr as _;
+    fn local_signer_pads_leading_zero_scalars_for_the_provider_contract() {
+        let mut bytes = [0; 32];
+        bytes[31] = 1; // Public test fixture, never an account credential.
+        let local = hypercarry_signing::SigningKey::from_slice(&bytes).unwrap();
+        let signer = LocalTestnetSigner::new(local, "fixture/local").unwrap();
+        let request = HyperliquidSigningRequest {
+            network: ExecutionNetwork::Testnet,
+            nonce: 1_700_000_000_000,
+            expires_after: 1_700_000_010_000,
+            action: json!({"type":"order","orders":[{"a":1,"b":false,
+                "p":"1","s":"1","r":false,"t":{"limit":{"tif":"Alo"}}}],"grouping":"na"}),
+        };
+        let response = signer.sign_l1_action(&request).unwrap();
+        assert!(
+            response["signature"]["r"]
+                .as_str()
+                .unwrap()
+                .starts_with("0x0")
+        );
+        validate_signed_request(&response, &request).unwrap();
+        let parsed: hypercarry_signing::ActionRequest = serde_json::from_value(response).unwrap();
+        assert_eq!(
+            parsed
+                .recover(hypercarry_signing::Chain::Testnet)
+                .unwrap()
+                .to_string()
+                .to_ascii_lowercase(),
+            signer.signer_address()
+        );
+    }
 
-        let local = hypersdk::hypercore::PrivateKeySigner::from_str(
-            "e908f86dbb4d55ac876378565aafeabc187f6690f046459397b17d9b9a19688e",
+    #[cfg(feature = "local-signer")]
+    #[test]
+    fn local_signer_produces_recoverable_order_and_cancel_requests() {
+        let local = hypercarry_signing::SigningKey::from_slice(
+            &"e908f86dbb4d55ac876378565aafeabc187f6690f046459397b17d9b9a19688e"
+                .parse::<hypercarry_signing::B256>()
+                .unwrap()[..],
         )
         .unwrap();
-        let signer = HypersdkTestnetSigner::new(local, "fixture/hypersdk-testnet").unwrap();
+        let signer = LocalTestnetSigner::new(local, "fixture/hypersdk-testnet").unwrap();
         let actions = [
             json!({
                 "type": "order",
@@ -2493,11 +2532,11 @@ mod tests {
             };
             let signed_request = signer.sign_l1_action(&request).unwrap();
             validate_signed_request(&signed_request, &request).unwrap();
-            let sdk_request: hypersdk::hypercore::ActionRequest =
+            let sdk_request: hypercarry_signing::ActionRequest =
                 serde_json::from_value(signed_request).unwrap();
             assert_eq!(
                 sdk_request
-                    .recover(hypersdk::hypercore::Chain::Testnet)
+                    .recover(hypercarry_signing::Chain::Testnet)
                     .unwrap()
                     .to_string()
                     .to_ascii_lowercase(),

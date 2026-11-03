@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/hypercarry-signing",
     "crates/hypercarry-core",
     "crates/hypercarry-cli",
     "crates/hypercarry-mcp",
@@ -19,11 +20,11 @@ members = [
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/john-lawniczak/hypercarry"
-rust-version = "1.93"
+rust-version = "1.94.1"
 
 [workspace.dependencies]
 anyhow = "1"
-alloy = { version = "2", default-features = false, features = ["signers"] }
+hypercarry-signing = { version = "=0.0.0", path = "crates/hypercarry-signing" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rust_decimal = { version = "1", default-features = false, features = ["std", "serde-with-str"] }
@@ -44,7 +45,6 @@ bytes = "1"
 futures-util = "0.3"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-hypersdk = "=0.2.15"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

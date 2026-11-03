@@ -3,7 +3,6 @@ use crate::{
     policy::{Purpose, ServicePolicy, validate_request},
     require_artifact, write_private,
 };
-use alloy::primitives::Signature;
 use anyhow::{Context, Result, bail, ensure};
 use chrono::DateTime;
 use fs2::FileExt;
@@ -13,7 +12,9 @@ use hypercarry_execution::{
 };
 use hypercarry_executor::{config::Config, safety::SafetySource};
 use hypercarry_mainnet_config::{read_json, validate_private_path};
-use hypersdk::hypercore::{Action, Chain};
+use hypercarry_signing::Signature;
+use hypercarry_signing::SignatureRecovery as _;
+use hypercarry_signing::{Action, Chain};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -85,29 +86,45 @@ fn backend_signature(
     stop: &AtomicBool,
 ) -> Result<Value> {
     require_artifact(&policy.backend, &policy.backend_sha256)?;
+    let mut command = Command::new(&policy.backend);
+    if let Some(path) = &policy.backend_config {
+        require_artifact(
+            path,
+            policy
+                .backend_config_sha256
+                .as_deref()
+                .context("missing backend config digest")?,
+        )?;
+        command.arg("--config").arg(path);
+    }
     let action: Action = serde_json::from_value(request.action.clone())?;
     let expires = DateTime::from_timestamp_millis(i64::try_from(request.expires_after)?)
         .context("invalid expiry")?;
     let hash = action.prehash(request.nonce, None, Some(expires), Chain::Mainnet)?;
-    let mut child = Command::new(&policy.backend)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .context("backend unavailable")?;
+    let mut helper = hypercarry_supervisor::process::HelperProcess::spawn(
+        command
+            .env_clear()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null()),
+    )
+    .context("backend unavailable")?;
+    let child = &mut helper.child;
+    let started = Instant::now();
     let input = json!({"schema_version":1,"network":"mainnet","key_id":request.key_id,"signer_address":request.signer_address,"prehash":hash.to_string()});
-    let write_result = (|| -> Result<()> {
-        let mut stdin = child.stdin.take().context("backend stdin missing")?;
-        serde_json::to_writer(&mut stdin, &input)?;
-        stdin.write_all(b"\n")?;
-        Ok(())
-    })();
-    if write_result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-        bail!("backend input failed");
-    }
+    let mut stdin = child.stdin.take().context("backend stdin missing")?;
+    let (input_send, input_receive) = std::sync::mpsc::sync_channel(1);
+    // A provider that never reads stdin must not block the supervising thread
+    // before its timeout starts. Group cleanup closes a stalled writer's pipe.
+    thread::spawn(move || {
+        let result = (|| -> Result<()> {
+            serde_json::to_writer(&mut stdin, &input)?;
+            stdin.write_all(b"\n")?;
+            Ok(())
+        })();
+        drop(stdin);
+        let _ = input_send.send(result);
+    });
     let stdout = child.stdout.take().context("backend stdout missing")?;
     let (send, receive) = std::sync::mpsc::sync_channel(1);
     thread::spawn(move || {
@@ -115,7 +132,6 @@ fn backend_signature(
         let result = stdout.take(1025).read_to_end(&mut bytes).map(|_| bytes);
         let _ = send.send(result);
     });
-    let started = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -123,12 +139,13 @@ fn backend_signature(
         if stop.load(Ordering::Relaxed)
             || started.elapsed() > Duration::from_millis(policy.backend_timeout_ms)
         {
-            let _ = child.kill();
-            let _ = child.wait();
             bail!("backend stopped or timed out; nonce remains consumed");
         }
         thread::sleep(Duration::from_millis(10));
     };
+    input_receive
+        .recv_timeout(Duration::from_millis(100))
+        .context("backend input did not finish")??;
     let bytes = receive
         .recv_timeout(Duration::from_millis(100))
         .context("backend output did not close after process exit")??;
@@ -149,7 +166,7 @@ fn backend_signature(
             == request.signer_address,
         "signature identity mismatch"
     );
-    // Serialize the SDK action, which defines the ordered signing wire format.
+    // Serialize the typed action, which defines the ordered signing wire format.
     Ok(
         json!({"action":action,"nonce":request.nonce,"expiresAfter":request.expires_after,"vaultAddress":null,
         "signature":{"r":format!("0x{:064x}",signature.r()),"s":format!("0x{:064x}",signature.s()),"v":signature.v_byte()}}),
@@ -337,15 +354,17 @@ mod tests {
 #[cfg(test)]
 mod backend_tests {
     use super::*;
-    use alloy::signers::{SignerSync, local::PrivateKeySigner};
+    use hypercarry_signing::{B256, DigestSigner, SigningKey};
     use std::os::unix::fs::PermissionsExt;
 
     fn fixture(script: Option<&str>) -> (tempfile::TempDir, SigningRequest, ServicePolicy) {
         // Public deterministic fixture key, never a credential or production key.
-        let signer: PrivateKeySigner =
-            "0000000000000000000000000000000000000000000000000000000000000001"
-                .parse()
-                .unwrap();
+        let signer = SigningKey::from_slice(
+            &"0000000000000000000000000000000000000000000000000000000000000001"
+                .parse::<B256>()
+                .unwrap()[..],
+        )
+        .unwrap();
         let runtime: hypercarry_mainnet_config::RuntimeConfig = serde_json::from_str(include_str!(
             "../../../docs/mainnet-runtime-config.example.json"
         ))
@@ -375,7 +394,7 @@ mod backend_tests {
         let signature = signer.sign_hash_sync(&hash).unwrap();
         let temp = tempfile::tempdir().unwrap();
         let backend = temp.path().join("provider");
-        let default = format!("#!/bin/sh\nprintf '%s\\n' '{signature}'\n");
+        let default = format!("#!/bin/sh\n/bin/cat >/dev/null\nprintf '%s\\n' '{signature}'\n");
         fs::write(&backend, script.unwrap_or(&default)).unwrap();
         fs::set_permissions(&backend, fs::Permissions::from_mode(0o700)).unwrap();
         let mut policy: ServicePolicy = serde_json::from_str(include_str!(
@@ -407,6 +426,66 @@ mod backend_tests {
         assert!(backend_signature(&request, &policy, &AtomicBool::new(false)).is_err());
         assert!(started.elapsed() < Duration::from_secs(2));
         let (_temp, request, policy) = fixture(Some("#!/bin/sh\nprintf 'not-a-signature'\n"));
+        assert!(backend_signature(&request, &policy, &AtomicBool::new(false)).is_err());
+    }
+
+    #[test]
+    fn backend_exit_cleans_descendants_on_success_and_refusal() {
+        for success in [true, false] {
+            let (temp, request, mut policy) = fixture(None);
+            let marker = temp.path().join("orphan-ran");
+            let output = fs::read_to_string(&policy.backend).unwrap();
+            let script = format!(
+                "#!/bin/sh\n(/bin/sleep 0.4; /usr/bin/touch '{}') >/dev/null 2>&1 &\n{}",
+                marker.display(),
+                if success { output.as_str() } else { "exit 1\n" }
+            );
+            fs::write(&policy.backend, script).unwrap();
+            policy.backend_sha256 = crate::artifact_digest(&policy.backend).unwrap();
+            assert_eq!(
+                backend_signature(&request, &policy, &AtomicBool::new(false)).is_ok(),
+                success
+            );
+            thread::sleep(Duration::from_millis(550));
+            assert!(!marker.exists(), "provider descendant survived leader exit");
+        }
+    }
+
+    #[test]
+    fn provider_that_never_reads_input_still_obeys_its_deadline() {
+        let (_temp, mut request, mut policy) = fixture(Some("#!/bin/sh\nexec /bin/sleep 10\n"));
+        request.key_id = "x".repeat(60_000);
+        policy.backend_timeout_ms = 100;
+        let started = Instant::now();
+        assert!(backend_signature(&request, &policy, &AtomicBool::new(false)).is_err());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "stdin write bypassed provider timeout"
+        );
+    }
+
+    #[test]
+    fn backend_timeout_kills_descendants_and_config_changes_are_refused() {
+        let (temp, request, mut policy) = fixture(None);
+        let marker = temp.path().join("orphan-ran");
+        fs::write(
+            &policy.backend,
+            format!(
+                "#!/bin/sh\n(/bin/sleep 0.4; /usr/bin/touch '{}') &\n/bin/sleep 10\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        policy.backend_sha256 = crate::artifact_digest(&policy.backend).unwrap();
+        policy.backend_timeout_ms = 100;
+        assert!(backend_signature(&request, &policy, &AtomicBool::new(false)).is_err());
+        thread::sleep(Duration::from_millis(500));
+        assert!(!marker.exists(), "provider child survived timeout");
+        let path = temp.path().join("backend.json");
+        fs::write(&path, "{}").unwrap();
+        policy.backend_config = Some(path.clone());
+        policy.backend_config_sha256 = Some(crate::artifact_digest(&path).unwrap());
+        fs::write(path, "{\"changed\":true}").unwrap();
         assert!(backend_signature(&request, &policy, &AtomicBool::new(false)).is_err());
     }
 }

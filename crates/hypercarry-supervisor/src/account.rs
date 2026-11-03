@@ -20,6 +20,21 @@ use serde_json::Value;
 /// null nor an object with a name.
 pub fn perp_dex_names(response: &Value) -> Result<Vec<Option<String>>> {
     let entries = response.as_array().context("perpDexs must be an array")?;
+    ensure!(
+        entries.first().is_some_and(Value::is_null),
+        "default perp DEX is missing"
+    );
+    let mut names = std::collections::BTreeSet::new();
+    for entry in entries.iter().skip(1) {
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .context("invalid perp DEX")?;
+        ensure!(
+            !name.is_empty() && names.insert(name),
+            "empty or duplicate perp DEX"
+        );
+    }
     entries
         .iter()
         .map(|entry| match entry {
@@ -155,6 +170,10 @@ pub fn open_orders(response: &Value) -> Result<(usize, Decimal)> {
     for order in orders {
         let price = decimal(order.get("limitPx"))?;
         let size = decimal(order.get("sz"))?;
+        ensure!(
+            price > Decimal::ZERO && size >= Decimal::ZERO,
+            "invalid open-order price or size"
+        );
         notional = price
             .checked_mul(size)
             .and_then(|value| notional.checked_add(value))
@@ -309,5 +328,18 @@ mod tests {
             Decimal::new(80_000, 0)
         );
         assert!(mid_price(&response, "ETH").is_err());
+    }
+
+    #[test]
+    fn missing_default_dex_and_negative_exposure_fail_closed() {
+        for dexs in [
+            json!([]),
+            json!([{"name":"other"}]),
+            json!([null, null]),
+            json!([null, {"name":"x"}, {"name":"x"}]),
+        ] {
+            assert!(perp_dex_names(&dexs).is_err());
+        }
+        assert!(open_orders(&json!([{"limitPx":"100", "sz":"-1"}])).is_err());
     }
 }

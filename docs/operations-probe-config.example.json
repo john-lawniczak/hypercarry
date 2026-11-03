@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "alert_receipt": "/var/lib/hypercarry-canary/monitoring/alert.json",
+  "recovery_receipt": "/var/lib/hypercarry-canary/monitoring/recovery.json",
+  "max_alert_age_ms": 60000,
+  "max_recovery_age_ms": 300000,
+  "recovery_artifact": "/opt/hypercarry/bin/hypercarry-watchdog",
+  "recovery_artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

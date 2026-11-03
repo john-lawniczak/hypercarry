@@ -20,10 +20,10 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
+tempfile = "3"
 
 [dev-dependencies]
 rust_decimal.workspace = true
-tempfile = "3"
 
 [lints]
 workspace = true

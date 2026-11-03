@@ -70,6 +70,7 @@ impl Config {
         crate::process::verify_binary(&config.analytics_bin, &config.analytics_sha256)?;
         for path in [&config.dataset, &config.trade_directory] {
             ensure!(path.is_absolute(), "storage paths must be absolute");
+            validate_storage_path(path)?;
             if !path.exists() && scopes.contains(&Scope::Write) {
                 fs::create_dir_all(path)?;
             }
@@ -140,6 +141,49 @@ impl Config {
     pub fn trade_path(&self, id: &str) -> Result<PathBuf> {
         validate_id(id)?;
         Ok(self.trade_directory.join(format!("{id}.json")))
+    }
+}
+
+// Validate even absent directories: a symlinked ancestor or `..` must not
+// hide execution authority from the storage prefix checks in trade-only mode.
+fn validate_storage_path(path: &Path) -> Result<()> {
+    ensure!(
+        !path.components().any(|c| matches!(
+            c,
+            std::path::Component::ParentDir | std::path::Component::CurDir
+        )),
+        "storage paths must not contain traversal"
+    );
+    for ancestor in path.ancestors() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(meta) => {
+                ensure!(
+                    meta.is_dir() && fs::canonicalize(ancestor)? == ancestor,
+                    "storage ancestors must be canonical directories without symlinks"
+                );
+                return Ok(());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    anyhow::bail!("storage has no existing ancestor")
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn absent_storage_cannot_hide_behind_traversal_or_symlinks() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        assert!(validate_storage_path(&root.join("absent/nested")).is_ok());
+        assert!(validate_storage_path(&root.join("absent/../authority")).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&root, root.join("alias")).unwrap();
+            assert!(validate_storage_path(&root.join("alias/absent")).is_err());
+        }
     }
 }
 pub fn validate_id(id: &str) -> Result<()> {

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "aws_bin": "/opt/aws-cli/v2/REPLACE_VERSION/dist/aws",
+  "aws_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "region": "us-east-1",
+  "kms_key_arn": "arn:aws:kms:us-east-1:123456789012:key/REPLACE_KEY_ID",
+  "key_id": "provider/mainnet-canary",
+  "signer_address": "0x2222222222222222222222222222222222222222",
+  "timeout_ms": 3000
+}

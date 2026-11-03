@@ -9,7 +9,7 @@ publish = false
 
 [features]
 default = []
-mainnet-execution = ["hypercarry-executor/mainnet-execution", "hypercarry-mainnet-config/mainnet-execution"]
+mainnet-execution = ["hypercarry-executor/mainnet-execution", "hypercarry-mainnet-config/mainnet-execution", "hypercarry-supervisor/mainnet-execution"]
 
 [[bin]]
 name = "hypercarry-mainnet-signer"
@@ -17,19 +17,29 @@ path = "src/bin/signer.rs"
 required-features = ["mainnet-execution"]
 
 [[bin]]
+name = "hypercarry-kms-provider"
+path = "src/bin/kms_provider.rs"
+required-features = ["mainnet-execution"]
+
+[[bin]]
 name = "hypercarry-watchdog"
 path = "src/bin/watchdog.rs"
 required-features = ["mainnet-execution"]
 
+[[bin]]
+name = "hypercarry-doctor"
+path = "src/bin/doctor.rs"
+required-features = ["mainnet-execution"]
+
 [dependencies]
+hypercarry-supervisor = { version = "=0.0.0", path = "../hypercarry-supervisor" }
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
 chrono.workspace = true
-alloy.workspace = true
-hypersdk.workspace = true
+hypercarry-signing.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
 hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
 hypercarry-executor = { version = "=0.0.0", path = "../hypercarry-executor" }
@@ -38,6 +48,8 @@ sha2 = "0.11"
 fs2 = "0.4"
 tempfile = "3"
 signal-hook = "0.4"
+base64 = "0.22"
+rustix = { version = "1", features = ["process"] }
 
 [lints]
 workspace = true

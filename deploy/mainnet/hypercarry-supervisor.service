@@ -1,0 +1,23 @@
+[Unit]
+Description=Hypercarry credential-free canary health supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hypercarry-canary
+Group=hypercarry-canary
+UMask=0077
+ExecStart=/opt/hypercarry/bin/hypercarry-supervisor run --config /etc/hypercarry-canary/supervisor.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/hypercarry-canary
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

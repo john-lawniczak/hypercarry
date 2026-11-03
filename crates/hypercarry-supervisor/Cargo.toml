@@ -20,6 +20,11 @@ name = "hypercarry-supervisor"
 path = "src/main.rs"
 required-features = ["mainnet-execution"]
 
+[[bin]]
+name = "hypercarry-operations-probe"
+path = "src/bin/operations_probe.rs"
+required-features = ["mainnet-execution"]
+
 [dependencies]
 hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
 hypercarry-mainnet-config = { version = "=0.0.0", path = "../hypercarry-mainnet-config" }
@@ -29,8 +34,17 @@ serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+signal-hook = "0.4"
+tempfile = "3"
+sha2 = "0.11"
+fs2 = "0.4"
+rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
+hypercarry-executor = { version = "=0.0.0", path = "../hypercarry-executor", features = ["mainnet-execution"] }
 tempfile = "3"
 
 [lints]

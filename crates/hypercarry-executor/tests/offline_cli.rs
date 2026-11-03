@@ -74,6 +74,23 @@ fn static_preflight_rejects_missing_reviewed_sessions_without_creating_journal()
     let evidence_path = temp.path().join("evidence.json");
     std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
     std::fs::write(&evidence_path, serde_json::to_vec(&evidence).unwrap()).unwrap();
+    // Preparation must work before approval, without changing draft evidence
+    // or creating execution state. Preflight below must still reject it.
+    for (command, flag, path) in [
+        ("gate-digest", "--config", &config_path),
+        ("evidence-digest", "--evidence", &evidence_path),
+    ] {
+        let before = std::fs::read(path).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_hypercarry-executor"))
+            .args([command, flag])
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap().trim().len(), 64);
+        assert_eq!(std::fs::read(path).unwrap(), before);
+        assert!(!temp.path().join("journal").exists());
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_hypercarry-executor"))
         .arg("preflight")
         .arg("--config")

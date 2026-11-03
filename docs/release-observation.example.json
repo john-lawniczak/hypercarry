@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "candidate_sha256": "REPLACE_WITH_TRUSTED_CANDIDATE_MANIFEST_SHA256",
+  "scenario": "security_review",
+  "outcome": "pending",
+  "operator": "REPLACE_WITH_OPERATOR_IDENTITY",
+  "reviewer": "REPLACE_WITH_INDEPENDENT_REVIEWER_IDENTITY",
+  "performed_at": "REPLACE_WITH_ACTUAL_UTC_TIME",
+  "observations": "Pending actual independent review; this example cannot pass verification.",
+  "session_id": null,
+  "artifacts": [
+    {
+      "path": "review-report.txt",
+      "sha256": "REPLACE_WITH_ACTUAL_REPORT_SHA256"
+    }
+  ]
+}

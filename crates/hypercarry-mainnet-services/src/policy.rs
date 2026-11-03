@@ -16,6 +16,11 @@ pub struct ServicePolicy {
     /// recoverable signature. Its key custody is external to this workspace.
     pub backend: PathBuf,
     pub backend_sha256: String,
+    /// Optional immutable provider configuration, passed as `--config PATH`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_config: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_config_sha256: Option<String>,
     pub signer_sha256: String,
     pub watchdog_sha256: String,
     pub backend_timeout_ms: u64,
@@ -47,6 +52,20 @@ impl ServicePolicy {
             "executor lease is not bound to runtime"
         );
         ensure!(self.schema_version == 1, "unsupported service policy");
+        ensure!(
+            self.backend_config.is_some() == self.backend_config_sha256.is_some(),
+            "backend config and digest must be supplied together"
+        );
+        if let Some(path) = &self.backend_config {
+            ensure!(path.is_absolute(), "backend config must be absolute");
+            validate_private_path(path)?;
+            ensure!(
+                self.backend_config_sha256.as_ref().is_some_and(
+                    |hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
+                ),
+                "invalid backend config digest"
+            );
+        }
         ensure!(
             (100..=60_000).contains(&self.backend_timeout_ms),
             "invalid backend timeout"
@@ -104,6 +123,10 @@ impl ServicePolicy {
                 "invalid artifact hash"
             );
         }
+        self.validate_paths(runtime)
+    }
+
+    fn validate_paths(&self, runtime: &RuntimeConfig) -> Result<()> {
         let mut paths = vec![
             &runtime.signer_socket,
             &runtime.journal,
@@ -111,10 +134,16 @@ impl ServicePolicy {
             &runtime.heartbeat,
             &runtime.kill_switch,
         ];
+        let signer_lock = self.signer_state.with_extension("lock");
+        let watchdog_lock = self.watchdog_state.with_extension("lock");
+        let supervisor_lock = runtime.health_file.with_extension("supervisor.lock");
         for path in [
             &self.signer_state,
             &self.watchdog_state,
             &self.executor_lease,
+            &signer_lock,
+            &watchdog_lock,
+            &supervisor_lock,
         ] {
             ensure!(
                 path.is_absolute() && !paths.contains(&path),
@@ -122,6 +151,19 @@ impl ServicePolicy {
             );
             validate_private_path(path)?;
             paths.push(path);
+        }
+        hypercarry_mainnet_config::validate_disjoint_paths(
+            paths
+                .iter()
+                .map(|p| p.as_path())
+                .chain(std::iter::once(self.backend.as_path()))
+                .chain(self.backend_config.as_deref()),
+        )?;
+        for input in std::iter::once(&self.backend).chain(self.backend_config.iter()) {
+            ensure!(
+                !paths.contains(&input),
+                "service output overlaps provider artifact or configuration"
+            );
         }
         Ok(())
     }
@@ -251,6 +293,8 @@ mod tests {
             schema_version: 1,
             backend: "/private/backend".into(),
             backend_sha256: "0".repeat(64),
+            backend_config: None,
+            backend_config_sha256: None,
             signer_sha256: "0".repeat(64),
             watchdog_sha256: "0".repeat(64),
             backend_timeout_ms: 1000,
@@ -364,11 +408,30 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let (mut r, mut base, _) = fixture();
+        r.health_file = temp.path().join("health.json");
         base.signer_state = temp.path().join("signer.json");
         base.watchdog_state = temp.path().join("watchdog.json");
         base.executor_lease = temp.path().join("lease.json");
         r.executor_lease = Some(base.executor_lease.clone());
         assert!(base.validate(&r).is_ok(), "{:?}", base.validate(&r).err());
+
+        // Distinct state filenames can still share the same derived lock.
+        let mut collision = base.clone();
+        collision.watchdog_state = collision.signer_state.with_extension("other");
+        assert!(collision.validate(&r).is_err());
+        collision = base.clone();
+        collision.backend_config = Some(collision.signer_state.clone());
+        collision.backend_config_sha256 = Some("a".repeat(64));
+        assert!(collision.validate(&r).is_err());
+        collision = base.clone();
+        collision.backend = collision.watchdog_state.clone();
+        assert!(collision.validate(&r).is_err());
+        collision = base.clone();
+        collision.signer_state = r.health_file.with_extension("supervisor.lock");
+        assert!(collision.validate(&r).is_err());
+        collision = base.clone();
+        collision.watchdog_state = r.health_file.with_extension("supervisor.lock");
+        assert!(collision.validate(&r).is_err());
 
         for (interval, reason) in [
             (999_u64, "below one second"),

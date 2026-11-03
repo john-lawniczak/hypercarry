@@ -17,3 +17,7 @@
 .env.*
 !.env.example
 !.env.*.example
+
+# Local Python tooling caches
+__pycache__/
+*.pyc

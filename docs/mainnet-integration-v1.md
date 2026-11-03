@@ -8,11 +8,11 @@ trading. No live mainnet orders were submitted during implementation.
 
 - `hypercarry-execution`: venue-neutral risk, identity, lifecycle, durable
   journal and the default-off `mainnet-execution` release gate.
-- `hypercarry-hyperliquid`: the migrated testnet implementation, SDK signing
+- `hypercarry-hyperliquid`: the migrated testnet implementation, isolated signing
   boundary, wire parsing, private streams and capability-gated mainnet adapter.
   `testnet-execution` and `mainnet-execution` are default-off. Mainnet enables the
-  pinned SDK for independent signature recovery. No dependency versions were
-  upgraded as part of this split.
+  supported k256 stack for independent signature recovery via `hypercarry-signing`.
+  The crypto migration requires [fresh review](signing-migration-review.md).
 - `hypercarry-executor`: non-published Unix binary, built only with
   `mainnet-execution`. It offers `config-digest`, `preflight`, `run`, and
   `recover`; it has no key loader or arbitrary endpoint option,
@@ -20,7 +20,7 @@ trading. No live mainnet orders were submitted during implementation.
 
 The public analytics CLI has no execution dependency. Existing testnet library
 users must change venue-specific imports from `hypercarry_execution` to
-`hypercarry_hyperliquid` and enable its `testnet-execution` / `hypersdk-signer`
+`hypercarry_hyperliquid` and enable its `testnet-execution` / `local-signer`
 features. The existing testnet operator and Foundry provider were migrated;
 their network and signing behavior remain testnet-only.
 
@@ -38,7 +38,7 @@ immediately consumes it. It accepts no second order. The adapter checks the
 same release digest, pinned signer alias/network, canary limits, fresh health,
 and watchdog before signing and again after signing. It checks capability and
 signed-action deadlines plus the kill switch at the final durable submission
-boundary. The SDK independently recovers the signature against the mainnet L1
+boundary. The signing boundary independently recovers the signature against the mainnet L1
 domain and pinned agent address. Signed payloads and signatures never enter the
 journal. The HTTPS exchange transport is private, fixed to the official mainnet
 endpoint, rejects redirects and bounds timeouts and response reads.
@@ -99,12 +99,16 @@ filled position remains in the account and needs the reviewed operator response.
    The `gate` object uses `MainnetReleaseConfig` from
    [the release gate](mainnet-release-gate-v1.md). Set its
    `integration_config_digest` to the runtime digest. Bind `gate.review_digest()`
-   into the reviewed bundle's `config_digest`. The optional field is omitted
+   into the reviewed bundle's `config_digest`, using
+   `hypercarry-executor gate-digest --config <config.json>` to compute it offline.
+   The optional field is omitted
    for historical gate fixtures; the executor requires it. Any account, signer,
    path, risk, order, timeout or asset change changes the runtime digest and
    requires a newly reviewed release bundle.
 6. Assemble the real schema-v2 evidence and obtain an independent human release
-   decision binding its digest. This binary deliberately does not generate
+   decision binding its digest. Compute the draft digest with
+   `hypercarry-executor evidence-digest --evidence <release.json>`; this neither
+   approves nor validates the draft for release. This binary deliberately does not generate
    approving evidence or fabricate operational readiness.
 7. Validate the frozen build and static evidence offline:
 
@@ -127,23 +131,20 @@ Their external custody backend, independent hosts, protected transports and
 alert delivery must still be provisioned, exercised and reviewed. The
 supplied Foundry signer is still testnet-only; do not point it at mainnet.
 
-The health supervisor is **partly** shipped, as `hypercarry-supervisor`. It
-establishes account flatness across every perp DEX, equity, open orders,
-reference price, and signed realized rolling P&L, and writes the health file
-atomically. It holds no credentials and cannot sign: its dependency tree
-contains no SDK, venue adapter or signing stack. Everything it has not yet
-measured — startup and continuous reconciliation, the private stream and its
-latency, alerts, the audit journal, rollback — it writes as `not_ready`, so the
-executor declines. Running it today therefore produces a valid health file that
-authorizes nothing, which is the intended behaviour for an incomplete
-supervisor. See the section below for the full requirement it is working
-towards.
+The credential-free `hypercarry-supervisor run` now supplies conservative
+single-canary reconciliation, all-DEX positions and open orders, equity, mids,
+realized closed P&L, private subscriptions/pong latency, and journal durability
+observations. A hash-pinned operations adapter must establish actual alert
+delivery and recovery availability. Missing checks stay `not_ready`; `sample`
+remains diagnostic-only. See [supervisor-v1](supervisor-v1.md) for exact semantics,
+policy binding, transport limits and the operations adapter contract, and
+[the launch runbook](mainnet-launch-runbook.md) for the remaining release blockers.
 
 - A protected external mainnet L1 agent signer implements the owner-only Unix
   socket protocol from [the testnet operator](testnet-operator-v1.md), with
   explicit `network: "mainnet"` in both request and response and the separately
   pinned mainnet alias/address. The provider must sign the exact ordered L1
-  action through the reviewed SDK, including expiry and mainnet domain, then
+  action through the reviewed signing codec, including expiry and mainnet domain, then
   close its response stream. Never put a key/password in config or environment.
 - An independent supervisor maintains the private `orderUpdates`/`userFills`
   stream, reconciles journal/account state on startup and reconnect, checks
@@ -211,5 +212,6 @@ Wire endpoints and precision checks follow the official
 [tick/lot rules](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size)
 [account-query scope](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint)
 and [signing guidance](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/signing).
-The integration retains pinned `hypersdk = 0.2.15` and tests recovery of real
-SDK signatures using a public deterministic test key only in offline fixtures.
+The integration uses k256 0.14.0 and crypto-bigint 0.7.10. Offline fixtures use
+public deterministic keys and match the legacy Rust and official Python SDKs.
+This conformance evidence does not replace independent security review.

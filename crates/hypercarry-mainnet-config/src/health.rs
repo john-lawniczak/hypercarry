@@ -88,22 +88,16 @@ impl HealthEnvelope {
     /// Returns an error for a path with no parent directory, or any I/O
     /// failure while writing, flushing or renaming.
     pub fn write_atomic(&self, path: &Path) -> Result<()> {
-        ensure!(path.parent().is_some(), "health path has no parent");
+        crate::validate_private_path(path)?;
+        let parent = path.parent().context("health path has no parent")?;
         // Same directory, therefore the same filesystem: `rename` is only
         // atomic within one.
-        let temporary = path.with_extension("tmp");
-        let mut file = fs::File::create(&temporary)
-            .with_context(|| format!("cannot create {}", temporary.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
+        let mut file = tempfile::NamedTempFile::new_in(parent)?;
         file.write_all(&serde_json::to_vec(self)?)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, path)
+        file.as_file().sync_all()?;
+        file.persist(path)
             .with_context(|| format!("cannot replace {}", path.display()))?;
+        fs::File::open(parent)?.sync_all()?;
         Ok(())
     }
 }
@@ -210,6 +204,11 @@ mod tests {
     #[test]
     fn replacing_the_file_leaves_a_reader_a_complete_observation() {
         let directory = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        }
         let path = directory.path().join("health.json");
         let config = runtime();
 
@@ -235,6 +234,7 @@ mod tests {
     fn the_health_file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let directory = tempfile::tempdir().unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let path = directory.path().join("health.json");
 
         envelope(&runtime(), 1_700_000_000_000)
@@ -243,5 +243,22 @@ mod tests {
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "health file is readable beyond its owner");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_old_temporary_symlink_cannot_overwrite_another_file() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let directory = tempfile::tempdir().unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let target = directory.path().join("protected");
+        fs::write(&target, b"retain this").unwrap();
+        let path = directory.path().join("health.json");
+        symlink(&target, path.with_extension("tmp")).unwrap();
+        envelope(&runtime(), 1).write_atomic(&path).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"retain this");
+        fs::remove_file(&path).unwrap();
+        symlink(&target, &path).unwrap();
+        assert!(envelope(&runtime(), 2).write_atomic(&path).is_err());
     }
 }
