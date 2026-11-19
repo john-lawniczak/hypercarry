@@ -2130,7 +2130,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -2147,7 +2147,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signal-hook 0.4.6",
  "tempfile",
 ]
@@ -2178,7 +2178,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -2201,7 +2201,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signal-hook 0.4.6",
  "tempfile",
 ]
@@ -2216,7 +2216,7 @@ dependencies = [
  "hypercarry-storage",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signal-hook 0.4.6",
  "tempfile",
 ]
@@ -2287,7 +2287,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signal-hook 0.4.6",
  "tempfile",
  "tokio",
@@ -2307,7 +2307,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signal-hook 0.4.6",
  "tempfile",
 ]
@@ -2702,7 +2702,7 @@ dependencies = [
  "ecdsa 0.17.0",
  "elliptic-curve 0.14.3",
  "primeorder",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "wnaf",
 ]
 
@@ -4168,9 +4168,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
