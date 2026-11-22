@@ -7,9 +7,9 @@
 #![warn(missing_docs)]
 
 use anyhow::{Context, Result, bail, ensure};
-use chrono::DateTime;
 use clap::{Parser, ValueEnum};
 use hypercarry_execution::ExecutionNetwork;
+use hypercarry_signing::ExpiryMs;
 use hypercarry_signing::SignatureRecovery as _;
 use hypercarry_signing::{Action, Chain};
 use hypercarry_signing::{Signature as AlloySignature, U256};
@@ -504,7 +504,7 @@ fn sign_request(
     shutdown: &AtomicBool,
 ) -> Result<Value> {
     let expires_ms = i64::try_from(request.expires_after).context("expiry exceeds i64")?;
-    let expires = DateTime::from_timestamp_millis(expires_ms).context("expiry is invalid")?;
+    let expires = ExpiryMs::from_timestamp_millis(expires_ms).context("expiry is invalid")?;
     let prehash = action
         .prehash(request.nonce, None, Some(expires), Chain::Testnet)
         .context("could not compute Hyperliquid testnet signing prehash")?;
@@ -651,7 +651,6 @@ fn validate_cloid(cloid: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone as _;
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -744,7 +743,7 @@ mod tests {
 
     #[test]
     fn pinned_sdk_accepts_and_hashes_exact_wire_actions() {
-        let expires = chrono::Utc.timestamp_millis_opt(20_000).unwrap();
+        let expires = ExpiryMs::from_timestamp_millis(20_000).unwrap();
         let order: Action = serde_json::from_value(order_action()).unwrap();
         let order_hash = order
             .prehash(10_000, None, Some(expires), Chain::Testnet)

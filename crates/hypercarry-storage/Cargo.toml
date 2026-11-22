@@ -10,15 +10,20 @@ description = "Versioned Parquet dataset contracts for hypercarry."
 [dependencies]
 arrow-array.workspace = true
 arrow-schema.workspace = true
-chrono.workspace = true
 hypercarry-core = { version = "=0.0.0", path = "../hypercarry-core" }
+hypercarry-notifications = { version = "=0.0.0", path = "../hypercarry-notifications", default-features = false }
 parquet = { workspace = true, features = ["arrow"] }
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.11"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
 bytes.workspace = true
+tempfile = "3"
 
 [lints]
 workspace = true

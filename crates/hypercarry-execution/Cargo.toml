@@ -12,6 +12,7 @@ default = []
 mainnet-execution = []
 
 [dependencies]
+hypercarry-notifications = { version = "=0.0.0", path = "../hypercarry-notifications", default-features = false }
 fs2 = "0.4"
 rust_decimal.workspace = true
 serde.workspace = true

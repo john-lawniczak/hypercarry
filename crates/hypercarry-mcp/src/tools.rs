@@ -42,16 +42,22 @@ pub fn list(scopes: &BTreeSet<Scope>) -> Vec<Value> {
             false,
             true,
         ));
+        // get_funding_apr and get_dataset_health are intentional aliases: both
+        // dispatch to the same "apr" analytics command and return the identical
+        // payload (settlement/APR fields plus freshness/contiguous-history
+        // coverage). Each name targets a different caller intent rather than a
+        // different subset of the response, so both descriptions state the
+        // complete payload instead of implying a partial one.
         tools.push(tool(
             "get_funding_apr",
-            "Latest stored settlement annualized; this is not a forecast.",
+            "Latest stored settlement annualized, plus dataset freshness and contiguous-history coverage; this is not a forecast. Identical payload to get_dataset_health.",
             schema(coin.clone(), &["coin"]),
             false,
             false,
         ));
         tools.push(tool(
             "get_dataset_health",
-            "Stored funding freshness and contiguous history.",
+            "Stored funding freshness and contiguous-history coverage, plus the latest stored settlement annualized. Identical payload to get_funding_apr, exposed under a health-focused name.",
             schema(coin, &["coin"]),
             false,
             false,

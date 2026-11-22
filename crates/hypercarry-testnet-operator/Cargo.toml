@@ -16,12 +16,20 @@ path = "src/main.rs"
 name = "hypercarry-foundry-testnet-signer"
 path = "src/bin/foundry_signer.rs"
 
+[[bin]]
+name = "hypercarry-testnet-recovery"
+path = "src/bin/recovery.rs"
+
+[[bin]]
+name = "hypercarry-bracket-journal"
+path = "src/bin/bracket_journal.rs"
+
 [dependencies]
+hypercarry-notifications = { version = "=0.0.0", path = "../hypercarry-notifications", default-features = false }
 anyhow.workspace = true
-chrono.workspace = true
 clap.workspace = true
 hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
-hypercarry-hyperliquid = { version = "=0.0.0", path = "../hypercarry-hyperliquid", features = ["testnet-execution"] }
+hypercarry-hyperliquid = { version = "=0.0.0", path = "../hypercarry-hyperliquid", features = ["local-signer"] }
 hypercarry-signing.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true

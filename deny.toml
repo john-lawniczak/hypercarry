@@ -5,6 +5,10 @@ all-features = true
 version = 2
 yanked = "deny"
 ignore = [
+    # Maintenance only, storage-transitive 0.4.45. No direct/signing use.
+    # tools/check_dependency_policy.py enforces parents/version and 2027-01-31 expiry.
+    # See docs/dependency-review-2026-11-22.md; vulnerabilities remain denied.
+    "RUSTSEC-2026-0543",
     # Transitive through alloy-primitives (public wire types only). This advisory reports only that
     # paste is archived; it is not a vulnerability and has no safe upgrade.
     "RUSTSEC-2024-0436",

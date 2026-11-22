@@ -4,8 +4,8 @@ M9 implements a release gate; it does not declare mainnet ready. The default-off
 adapter and one-shot executor are now implemented in separate crates; see
 [mainnet integration](mainnet-integration-v1.md). The gate module itself
 is compiled only with the default-off `mainnet-execution` feature, and the
-current evidence record has one clean credentialed candidate but no independent
-reviewer attestation, complete three-session set, or human release approval.
+public source does not supply credentialed session attestations or human release
+approval. Retain a complete, candidate-bound three-session review set privately.
 
 ## Static evidence gate
 
@@ -82,7 +82,7 @@ failures; fresh independent security review and operational evidence remain
 required before release.
 
 **Closed.** `docs/testnet-execution-evidence.md` records deterministic M8 tests
-and one clean credentialed candidate, but that candidate has no independent
+but public source includes no credentialed candidate or independent
 human attestation and the required three-session set is incomplete. There is no
 frozen release bundle, security-review record, rollback artifact, final evidence
 digest, or human approval. The implemented integration also requires reviewed

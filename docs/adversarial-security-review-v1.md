@@ -17,7 +17,7 @@ here.
 ## Scope after the mainnet integration
 
 This is a historical review of the code as it existed on 2026-09-03. It does
-not cover the mainnet integration added in `db6fec4` on 2026-09-06, including
+not cover the mainnet integration added on 2026-09-06, including
 the mainnet adapter, external-signer client, operational health source, build
 identity checks and manual executor. Nor does it cover the work added on
 2026-09-30: the venue-side scheduled cancel, the shared `hypercarry-mainnet-config`
@@ -160,7 +160,7 @@ still computes correctly.
   (`O_EXCL`-backed), not a separate exists-check-then-create, so there is no
   overwrite race.
 - **Signal handling during interactive `cast` signing**: the documented
-  `df1f911` fix (reap `cast` on interrupt, not only in the accept loop) is
+  process-lifecycle fix (reap `cast` on interrupt, not only in the accept loop) is
   intact and was not regressed.
 
 ## Backlog — identified but deliberately not fixed in this pass
@@ -211,7 +211,7 @@ methodology to re-verify before acting on any of these.
 
 4. **A produced signature can be silently discarded when the operator's
    socket timeout fires during interactive `cast` signing**
-   (`bin/foundry_signer.rs`, `signer.rs`). This is the documented `df1f911`
+   (`bin/foundry_signer.rs`, `signer.rs`). This is the documented process-lifecycle
    failure mode's residual shape: fail-closed and no signature leak, but a
    recurring liveness trap (the operator must start an entirely new session).
    Recommended direction: either bound the interactive step out of the

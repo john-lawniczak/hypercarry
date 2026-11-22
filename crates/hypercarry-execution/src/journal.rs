@@ -29,6 +29,22 @@ pub struct JournalEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum JournalEventKind {
+    /// Atomic recovery checkpoint and optional alert for the asynchronous worker.
+    Recovery {
+        /// Immutable policy and durable action reservation/reconciliation state.
+        record: Box<crate::recovery::RecoveryRecord>,
+        /// Secret-free alert committed with the transition; never sent inline.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notification: Option<Box<hypercarry_notifications::NotificationEvent>>,
+    },
+    /// Non-signing bracket lifecycle event; uses a dedicated journal per trade.
+    Bracket {
+        /// Versioned, secret-free state input. Does not authorize a venue write.
+        event: crate::bracket::BracketEvent,
+        /// Optional asynchronous alert, committed atomically with the transition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notification: Option<Box<hypercarry_notifications::NotificationEvent>>,
+    },
     /// Binds a live executor journal to reviewed operational identity.
     ExecutionContextBound {
         /// Exact network of external effects.
@@ -101,6 +117,11 @@ pub enum JournalEventKind {
 
 /// Durable append boundary used by the dry-run pipeline.
 pub trait Journal {
+    /// Next append sequence while holding the writer lock, when supported.
+    /// Bracket workflows require this to reject wrong/reused journals before writing.
+    fn next_sequence(&self) -> Option<u64> {
+        None
+    }
     /// Durably appends one event and returns its assigned sequence.
     ///
     /// # Errors
@@ -130,11 +151,14 @@ impl FileJournal {
     /// schema versions, blank lines, or non-contiguous sequences.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ExecutionError> {
         let path = path.as_ref();
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .append(true)
-            .open(path)?;
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(path)?;
         file.try_lock_exclusive().map_err(|error| {
             ExecutionError::JournalIo(std::io::Error::new(
                 error.kind(),
@@ -150,6 +174,9 @@ impl FileJournal {
 }
 
 impl Journal for FileJournal {
+    fn next_sequence(&self) -> Option<u64> {
+        Some(self.next_sequence)
+    }
     fn append(
         &mut self,
         recorded_at_ms: i64,
@@ -251,6 +278,9 @@ pub struct InMemoryJournal {
 }
 
 impl Journal for InMemoryJournal {
+    fn next_sequence(&self) -> Option<u64> {
+        u64::try_from(self.events.len()).ok()
+    }
     fn append(
         &mut self,
         recorded_at_ms: i64,
@@ -272,6 +302,7 @@ impl Journal for InMemoryJournal {
     }
 }
 
+#[allow(clippy::too_many_lines)] // Keep the versioned event validation table together.
 fn validate_record(record: &JournalEvent) -> Result<(), ExecutionError> {
     validate_correlation_id(&record.correlation_id)
         .map_err(|error| ExecutionError::JournalSchema(error.to_string()))?;
@@ -281,6 +312,56 @@ fn validate_record(record: &JournalEvent) -> Result<(), ExecutionError> {
         ));
     }
     match &record.event {
+        JournalEventKind::Recovery {
+            record: recovery,
+            notification,
+        } => {
+            recovery.policy.validate()?;
+            if recovery.policy.spec.trade_id != record.correlation_id {
+                return Err(ExecutionError::JournalSchema(
+                    "recovery identity mismatch".into(),
+                ));
+            }
+            if let Some(event) = notification {
+                event
+                    .validate()
+                    .map_err(|_| ExecutionError::JournalSchema("invalid notification".into()))?;
+                if event.trade_id != recovery.policy.spec.trade_id
+                    || event.network != recovery.policy.spec.network.as_str()
+                    || event.coin != recovery.policy.spec.coin
+                    || i64::try_from(event.observed_at_ms).ok() != Some(record.recorded_at_ms)
+                {
+                    return Err(ExecutionError::JournalSchema(
+                        "notification identity mismatch".into(),
+                    ));
+                }
+            }
+        }
+        JournalEventKind::Bracket {
+            event,
+            notification,
+        } => {
+            if let Some(alert) = notification {
+                alert
+                    .validate()
+                    .map_err(|_| ExecutionError::JournalSchema("invalid bracket alert".into()))?;
+                if alert.trade_id != record.correlation_id
+                    || i64::try_from(alert.observed_at_ms).ok() != Some(record.recorded_at_ms)
+                {
+                    return Err(ExecutionError::JournalSchema(
+                        "bracket alert identity mismatch".into(),
+                    ));
+                }
+            }
+            if let crate::bracket::BracketEvent::Initialized { spec } = event {
+                spec.validate()?;
+                if spec.trade_id != record.correlation_id {
+                    return Err(ExecutionError::JournalSchema(
+                        "bracket identity mismatch".into(),
+                    ));
+                }
+            }
+        }
         JournalEventKind::RiskRejected { rejection }
         | JournalEventKind::VenueRejected { rejection } => {
             if rejection.code.trim().is_empty() || rejection.reason.trim().is_empty() {

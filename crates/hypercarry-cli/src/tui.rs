@@ -3,13 +3,13 @@ use crate::{
     error::{CliError, ErrorCategory},
     predict::{PredictionSnapshot, ReplaySampleFeed, load_live_snapshot_with_feed},
 };
-use chrono::{DateTime, SecondsFormat, Utc};
 use crossterm::{
     cursor::{Hide, Show},
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use hypercarry_core::utc::format_millis;
 use hypercarry_core::{
     metrics::{FundingInterval, funding_apr},
     predictor::FUNDING_HOUR_MS,
@@ -213,10 +213,7 @@ impl TuiView {
 }
 
 fn timestamp_utc(timestamp_ms: i64) -> String {
-    DateTime::<Utc>::from_timestamp_millis(timestamp_ms).map_or_else(
-        || format!("invalid ({timestamp_ms} ms)"),
-        |timestamp| timestamp.to_rfc3339_opts(SecondsFormat::Millis, true),
-    )
+    format_millis(timestamp_ms).unwrap_or_else(|| format!("invalid ({timestamp_ms} ms)"))
 }
 
 fn signed_percent(value: Decimal) -> String {

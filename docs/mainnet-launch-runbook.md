@@ -1,5 +1,11 @@
 # Mainnet canary launch — 2026-11-03
 
+Current dependency status (2026-11-22): patch upgrades resolve the new rustix/url
+advisories. Direct chrono use is removed; the remaining storage-only maintenance
+exception is version/parent-bounded and expires January 31, 2027. See
+[dependency review](dependency-review-2026-11-22.md); do not reuse the earlier
+cached-clean audit as current release evidence.
+
 **Decision: NO-GO for live orders until the blockers below are closed.** The
 scope is one independently reviewed, minimum-size, flat-account canary. This
 does not launch an unattended carry strategy or a spot hedge. No live account
@@ -27,7 +33,7 @@ verification of the complete pending diff. It does not replace independent revie
 | No provisioned production custody/account/hosts | Operator: actual KMS key, approved agent, dedicated account, private hosts, working transports and least-privilege access. |
 | Operational probe is infrastructure-specific | Operations: integrate actual monitoring with the supplied [receipt-backed probe](operations-probe-v1.md); review its receipt writer and exercise real delivery and recovery access. A constant-output script cannot satisfy this. |
 | Supervisor and custody changes lack live failure evidence | Operator/reviewer: measure real account latency, request budget, KMS response times, private reconnects, stale replication and partial-fill recovery. Offline fixtures do not establish these. |
-| Three independent credentialed testnet session reviews are missing | Reviewer: finish the existing candidate review and enough additional sessions to total three, covering documented fault cases. |
+| Three independent credentialed testnet session reviews are missing | Reviewer: retain three candidate-bound session reviews, covering documented fault cases. |
 | Frozen release and human approval are absent | Release owner/reviewer: freeze clean source and Linux binaries, exact policy/configuration and evidence, security review and rollback exercise, then explicit human approval. |
 
 The signing migration now uses `k256 0.14.0`, `elliptic-curve 0.14.3` and

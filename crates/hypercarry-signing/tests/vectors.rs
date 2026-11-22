@@ -23,9 +23,9 @@ fn legacy_sdk_hashes_payloads_and_signatures_match() {
         } else {
             Chain::Testnet
         };
-        let expiry = expected
-            .expires_after
-            .map(|e| chrono::DateTime::from_timestamp_millis(i64::try_from(e).unwrap()).unwrap());
+        let expiry = expected.expires_after.map(|e| {
+            hypercarry_signing::ExpiryMs::from_timestamp_millis(i64::try_from(e).unwrap()).unwrap()
+        });
         let hash = action.prehash(expected.nonce, None, expiry, chain).unwrap();
         assert_eq!(hash.to_string(), vector["hash"]);
         let actual = action
@@ -149,15 +149,12 @@ fn out_of_range_expiry_is_rejected_without_wrapping() {
         serde_json::from_value(vectors()[0]["signed"].clone()).unwrap();
     request.expires_after = Some(u64::MAX);
     assert!(request.recover(Chain::Testnet).is_err());
-    assert!(
-        request
-            .action
-            .prehash(
-                1,
-                None,
-                chrono::DateTime::from_timestamp_millis(-1),
-                Chain::Testnet
-            )
-            .is_err()
+    assert!(hypercarry_signing::ExpiryMs::from_timestamp_millis(-1).is_none());
+    assert!(hypercarry_signing::ExpiryMs::from_timestamp_millis(8_210_266_876_800_000).is_none());
+    assert_eq!(
+        hypercarry_signing::ExpiryMs::from_timestamp_millis(8_210_266_876_799_999)
+            .unwrap()
+            .timestamp_millis(),
+        8_210_266_876_799_999
     );
 }

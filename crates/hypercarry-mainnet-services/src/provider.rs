@@ -4,7 +4,6 @@ use crate::{
     require_artifact, write_private,
 };
 use anyhow::{Context, Result, bail, ensure};
-use chrono::DateTime;
 use fs2::FileExt;
 use hypercarry_execution::{
     ComprehensiveRiskPolicy, ExecutionError, ExecutionNetwork, FileKillSwitch, RiskDecision,
@@ -12,6 +11,7 @@ use hypercarry_execution::{
 };
 use hypercarry_executor::{config::Config, safety::SafetySource};
 use hypercarry_mainnet_config::{read_json, validate_private_path};
+use hypercarry_signing::ExpiryMs;
 use hypercarry_signing::Signature;
 use hypercarry_signing::SignatureRecovery as _;
 use hypercarry_signing::{Action, Chain};
@@ -98,7 +98,7 @@ fn backend_signature(
         command.arg("--config").arg(path);
     }
     let action: Action = serde_json::from_value(request.action.clone())?;
-    let expires = DateTime::from_timestamp_millis(i64::try_from(request.expires_after)?)
+    let expires = ExpiryMs::from_timestamp_millis(i64::try_from(request.expires_after)?)
         .context("invalid expiry")?;
     let hash = action.prehash(request.nonce, None, Some(expires), Chain::Mainnet)?;
     let mut helper = hypercarry_supervisor::process::HelperProcess::spawn(
@@ -385,7 +385,7 @@ mod backend_tests {
                 nonce,
                 None,
                 Some(
-                    DateTime::from_timestamp_millis(i64::try_from(request.expires_after).unwrap())
+                    ExpiryMs::from_timestamp_millis(i64::try_from(request.expires_after).unwrap())
                         .unwrap(),
                 ),
                 Chain::Mainnet,
@@ -403,6 +403,9 @@ mod backend_tests {
         .unwrap();
         policy.backend = backend;
         policy.backend_sha256 = crate::artifact_digest(&policy.backend).unwrap();
+        // Success/identity fixtures must tolerate cold process launch under load.
+        // Deadline regressions below explicitly override this with 100 ms.
+        policy.backend_timeout_ms = 5000;
         (temp, request, policy)
     }
     #[test]
@@ -442,9 +445,11 @@ mod backend_tests {
             );
             fs::write(&policy.backend, script).unwrap();
             policy.backend_sha256 = crate::artifact_digest(&policy.backend).unwrap();
+            let result = backend_signature(&request, &policy, &AtomicBool::new(false));
             assert_eq!(
-                backend_signature(&request, &policy, &AtomicBool::new(false)).is_ok(),
-                success
+                result.is_ok(),
+                success,
+                "public fixture backend result: {result:?}"
             );
             thread::sleep(Duration::from_millis(550));
             assert!(!marker.exists(), "provider descendant survived leader exit");

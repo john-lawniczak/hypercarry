@@ -1,0 +1,20 @@
+# Defense in depth for git archive. The public exporter independently filters
+# private paths and checks content. None of these rules erase private history.
+[Zz]-* export-ignore
+**/[Zz]-*/** export-ignore
+/TODO.md export-ignore
+/tools/export-public.sh export-ignore
+*.parquet export-ignore
+*.duckdb export-ignore
+
+# Same case-insensitive private storage directory boundary as the exporter.
+[Dd][Aa][Tt][Aa] export-ignore
+**/[Dd][Aa][Tt][Aa]/** export-ignore
+[Pp][Rr][Ii][Vv][Aa][Tt][Ee] export-ignore
+**/[Pp][Rr][Ii][Vv][Aa][Tt][Ee]/** export-ignore
+[Aa][Cc][Cc][Oo][Uu][Nn][Tt]-[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt][Ss] export-ignore
+**/[Aa][Cc][Cc][Oo][Uu][Nn][Tt]-[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt][Ss]/** export-ignore
+[Tt][Rr][Aa][Dd][Ee]-[Jj][Oo][Uu][Rr][Nn][Aa][Ll][Ss] export-ignore
+**/[Tt][Rr][Aa][Dd][Ee]-[Jj][Oo][Uu][Rr][Nn][Aa][Ll][Ss]/** export-ignore
+[Kk][Ee][Yy][Ss][Tt][Oo][Rr][Ee][Ss] export-ignore
+**/[Kk][Ee][Yy][Ss][Tt][Oo][Rr][Ee][Ss]/** export-ignore

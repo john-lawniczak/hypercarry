@@ -166,6 +166,6 @@ them. The `faults_reviewed` field in your attestation is copied from the
 session's `faults_injected`. A session that injected no faults contributes no
 fault coverage, however clean it is.
 
-The 2026-09-01 candidate is one such session: clean, and with no faults injected.
+A clean session without injected faults covers only that normal lifecycle.
 Reviewing it successfully makes it session one of three, and leaves the entire
 fault matrix still to be covered by the other two.

@@ -9,7 +9,9 @@
 mod config;
 mod evidence;
 mod operator;
+mod recovery;
 mod review;
+pub use recovery::{RecoveryConfig, run_recovery};
 mod signer;
 
 pub use config::{OperatorConfig, PreflightSummary};

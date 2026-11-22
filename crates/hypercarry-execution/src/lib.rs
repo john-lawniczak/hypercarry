@@ -7,6 +7,7 @@
 
 #![warn(missing_docs)]
 
+pub mod bracket;
 mod dry_run;
 mod error;
 mod identity;
@@ -14,6 +15,7 @@ mod journal;
 mod lifecycle;
 mod model;
 mod network;
+pub mod recovery;
 mod reliability;
 mod risk;
 mod signing;

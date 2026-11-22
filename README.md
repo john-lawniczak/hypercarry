@@ -37,6 +37,39 @@ approximation, not an account cash-funding statement.
 
 ## Quick start
 
+Account inspection and isolated trade previews are also available without keys:
+
+```sh
+hypercarry account --network mainnet --address YOUR_PUBLIC_ACCOUNT status
+hypercarry account --network mainnet --address YOUR_PUBLIC_ACCOUNT portfolio --require-exits
+hypercarry trade-preview --plan data/my-plan.json
+```
+
+Private journals and trading data are excluded from OSS exports; see
+[the public/private boundary](docs/public-privacy-boundary.md). Ignore rules do
+not remove tracked private history, so always use the filtered exporter.
+
+`portfolio` discovers up to 512 native and builder perp DEXs, reports full-size reduce-only
+TP/SL coverage and orphan triggers, and can fail a manual check with
+`--require-exits`. Add `--archive-dir` to retain immutable private observations,
+including failed reads. It neither signs transactions nor installs continuous monitoring.
+
+See [the local trading guide](docs/local-trading-v1.md) for commands, health
+calculations and precise implementation boundaries. The new bracket codec and
+journal engine back the local operator. A separate default-off
+[attended mainnet bracket adapter](docs/local-mainnet-bracket-pilot.md) is implemented;
+frozen-candidate testnet qualification and exact release approval remain pending.
+Mainnet release remains closed.
+
+An [experimental local operator integration](docs/local-operator-integration.md)
+now connects the Rust planner/journal to a scoped agent signer for **testnet**
+entries, full/partial closes and protective exits. It also provides unsigned
+mainnet/testnet ledger ingestion, Unified-USDC equity reconciliation, monitoring
+and cached status. Recovery handoff supports repaired exit IDs, builder markets
+and a scoped cancellation/close signer policy. Credentialed
+verification and independent review remain pending; see the
+[validation handoff](docs/local-operator-validation.md).
+
 ```sh
 cargo run -p hypercarry-cli -- snapshot --network mainnet --coin BTC
 ```
@@ -63,9 +96,10 @@ the mainnet commands above or an expected return.
 
 ## Safety model
 
-**The shipped CLI is read-only.** It accepts no private key, signs nothing,
-touches no wallet, and places no orders. There is no built-in key loader
-anywhere in the workspace.
+**The shipped Rust CLI is read-only.** It accepts no private key, signs nothing,
+touches no wallet, and places no orders. The separate experimental Python signer
+can unlock an encrypted testnet agent keystore locally for an approved bounded
+session; it cannot sign mainnet actions and is not part of the analytics binary.
 
 Execution exists, is default-off, and lives in separate crates. No mainnet
 order has been submitted by this implementation. Production infrastructure,
@@ -99,8 +133,9 @@ delivery and recovery availability recorded by your monitoring infrastructure.
 [mainnet-release-gate-v1](docs/mainnet-release-gate-v1.md) for what remains.
 Start with [self-hosted mainnet preparation](docs/self-hosted-mainnet-v1.md):
 AWS KMS and two-host custody/recovery, verified passive installation, offline
-diagnostics and the pre-release cloud exercises. The active dependency audit is
-clear; fresh independent signing/security review remains required. Offline checks
+diagnostics and the pre-release cloud exercises. The refreshed dependency audit
+passes with a bounded storage-only chrono maintenance exception; see [dependency review](docs/dependency-review-2026-11-22.md).
+Fresh independent signing/security review remains required. Offline checks
 do not constitute a production release.
 
 Not affiliated with Hyperliquid. Not trading advice.
@@ -207,12 +242,12 @@ M1 through M8 and the M9 release-gate implementation are complete. The mainnet
 adapter and manual executor are implemented behind default-off features;
 mainnet release readiness is **closed**.
 
-One clean credentialed testnet place/cancel/reconcile candidate was recorded on
-2026-09-01. It does not yet count as one of the three required sessions because
-no independent human has emitted its reviewer attestation.
+Release requires three distinct, independently reviewed credentialed testnet
+sessions bound to the frozen candidate. Session records and reviewer attestations
+are retained privately; public fixtures do not satisfy that requirement.
 
 [DEV_STATUS.md](DEV_STATUS.md) is the continuously maintained capability matrix,
-live-integration readiness record, and design-decision log.
+implementation verification summary and remaining release requirements.
 
 ## Reference documentation
 
@@ -239,7 +274,7 @@ live-integration readiness record, and design-decision log.
 - [execution-simulation-v1](docs/execution-simulation-v1.md) — dry-run behavior and journal schema
 - [testnet-execution-v1](docs/testnet-execution-v1.md), [hyperliquid-testnet-runbook](docs/hyperliquid-testnet-runbook.md) and [testnet-funding](docs/testnet-funding.md) — testnet operation
 - [testnet-operator-v1](docs/testnet-operator-v1.md) — evidence harness, owner-only signer protocol, reviewer attestation
-- [testnet-execution-evidence](docs/testnet-execution-evidence.md) — recorded session evidence
+- [testnet-execution-evidence](docs/testnet-execution-evidence.md) — evidence requirements and offline checks
 - [adversarial-security-review-v1](docs/adversarial-security-review-v1.md) — findings and accepted backlog
 
 The optional `local-signer` feature uses `hypercarry-signing` with k256 0.14
@@ -263,3 +298,17 @@ Dual-licensed under either of [Apache-2.0](LICENSE-APACHE) or
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and safety
 boundaries. Report suspected vulnerabilities privately according to
 [SECURITY.md](SECURITY.md).
+
+### Local operational alerts
+
+The optional [`hypercarry-notify` worker](docs/notifications-v1.md) imports
+journal events into a durable local outbox and supports opt-in email/SMS routes,
+receipt checks and acknowledgement. It has no wallet access and is separate
+from trading. No delivery provider is configured by default.
+
+The [local stop-recovery host](docs/stop-recovery-v1.md) provides bounded,
+journaled residual closes and owned-exit cleanup through a testnet-only adapter.
+It preserves native protection while exposed. Mainnet remains release-gated;
+the compatible scoped agent signer is implemented, while credentialed scenario
+verification and independent review remain outstanding. Start with the
+[attended testnet runbook](docs/attended-testnet-session.md).

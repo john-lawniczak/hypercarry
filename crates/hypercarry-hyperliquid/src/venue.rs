@@ -1,3 +1,4 @@
+mod scope;
 use hypercarry_core::info::Network;
 use hypercarry_execution::{
     ClientOrderId, ExecutionError, ExecutionMode, ExecutionNetwork, ExecutionReport, Journal,
@@ -262,7 +263,7 @@ where
                 .map_err(|_| LocalSignerError("unsupported Hyperliquid action"))?;
         let expires_after_ms = i64::try_from(request.expires_after())
             .map_err(|_| LocalSignerError("action expiry exceeds i64"))?;
-        let expires_after = chrono::DateTime::from_timestamp_millis(expires_after_ms)
+        let expires_after = hypercarry_signing::ExpiryMs::from_timestamp_millis(expires_after_ms)
             .ok_or(LocalSignerError("action expiry is invalid"))?;
         let signed = action
             .sign_sync(
@@ -343,6 +344,16 @@ impl Error for TransportFailure {}
 
 /// Injectable REST boundary. Normal tests use scripted responses.
 pub trait HyperliquidTransport {
+    /// Fresh complete scope for large recovery accounts; never cached evidence.
+    /// # Errors
+    /// Refuses incomplete subscriptions, changed positions or stale scope.
+    fn recovery_scope(
+        &mut self,
+        _account: &str,
+        _dexes: &[String],
+    ) -> Result<Option<Value>, ExecutionError> {
+        Ok(None)
+    }
     /// Sends a signed `/exchange` request.
     ///
     /// # Errors
@@ -381,6 +392,7 @@ impl ReqwestHyperliquidTransport {
         }
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
             .connect_timeout(connect_timeout)
             .timeout(request_timeout)
             .build()
@@ -458,6 +470,17 @@ impl ReqwestHyperliquidTransport {
 }
 
 impl HyperliquidTransport for ReqwestHyperliquidTransport {
+    fn recovery_scope(
+        &mut self,
+        account: &str,
+        dexes: &[String],
+    ) -> Result<Option<Value>, ExecutionError> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| ExecutionError::Transport("scope runtime unavailable".into()))?;
+        runtime.block_on(scope::bootstrap(account, dexes)).map(Some)
+    }
     fn exchange(&mut self, request: &Value) -> Result<Value, TransportFailure> {
         self.post("exchange", "/exchange", request)
     }
@@ -2640,3 +2663,6 @@ mod tests {
 
 #[cfg(feature = "mainnet-execution")]
 pub mod mainnet;
+
+#[cfg(feature = "local-signer")]
+pub mod recovery;

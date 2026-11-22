@@ -2,8 +2,8 @@ use crate::{
     config::{AprOptions, OutputFormat},
     error::{CliError, ErrorCategory},
 };
-use chrono::{DateTime, SecondsFormat, Utc};
 use hypercarry_core::metrics::{FundingInterval, funding_apr};
+use hypercarry_core::utc::format_millis;
 use hypercarry_storage::{dataset::SettledFundingDataset, settled_funding::SettledFundingRecord};
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -75,17 +75,15 @@ fn read_latest_apr<'a>(
     let interval = FundingInterval::from_hours(1).expect("one hour is non-zero");
     let apr = funding_apr(latest.funding_rate, interval);
     let settlement_time_iso =
-        DateTime::<Utc>::from_timestamp_millis(latest.identity.settlement_time.as_i64())
-            .ok_or_else(|| {
-                CliError::new(
-                    ErrorCategory::Schema,
-                    format!(
-                        "settlement timestamp {}ms cannot be formatted as UTC",
-                        latest.identity.settlement_time.as_i64()
-                    ),
-                )
-            })?
-            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        format_millis(latest.identity.settlement_time.as_i64()).ok_or_else(|| {
+            CliError::new(
+                ErrorCategory::Schema,
+                format!(
+                    "settlement timestamp {}ms cannot be formatted as UTC",
+                    latest.identity.settlement_time.as_i64()
+                ),
+            )
+        })?;
     Ok(AprView {
         schema_version: JSON_SCHEMA_VERSION,
         network: options.network,

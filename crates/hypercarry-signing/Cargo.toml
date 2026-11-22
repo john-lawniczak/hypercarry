@@ -10,7 +10,6 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
-chrono.workspace = true
 rust_decimal.workspace = true
 alloy-primitives = { version = "1.7.1", default-features = false, features = ["std", "serde"] }
 alloy-sol-types = { version = "1.7.1", default-features = false, features = ["std"] }

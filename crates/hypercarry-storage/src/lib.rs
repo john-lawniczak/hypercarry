@@ -6,5 +6,7 @@
 
 #![warn(missing_docs)]
 
+pub mod alerts;
 pub mod dataset;
+pub mod observations;
 pub mod settled_funding;

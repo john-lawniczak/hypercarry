@@ -259,6 +259,21 @@ pub trait InfoTransport {
     ///
     /// Returns a transport-specific error if the request cannot be completed.
     fn post(&self, request_body: &[u8]) -> impl Future<Output = Result<Vec<u8>, BoxError>> + Send;
+
+    /// Obtain fresh complete position/order stream scope for a large portfolio.
+    /// Fixture and custom transports must opt in; no implicit network fallback.
+    ///
+    /// # Errors
+    /// Returns an error when complete bounded scope cannot be established.
+    fn portfolio_scope(
+        &self,
+        _account: &str,
+        _dexes: &[String],
+    ) -> impl Future<Output = Result<serde_json::Value, BoxError>> + Send {
+        std::future::ready(Err(
+            "portfolio stream scope unavailable for this transport".into()
+        ))
+    }
 }
 
 /// Production asynchronous [`InfoTransport`] backed by reqwest.
@@ -332,6 +347,19 @@ impl ReqwestInfoTransport {
 impl InfoTransport for ReqwestInfoTransport {
     fn network(&self) -> Network {
         self.network
+    }
+
+    async fn portfolio_scope(
+        &self,
+        account: &str,
+        dexes: &[String],
+    ) -> Result<serde_json::Value, BoxError> {
+        if self.endpoint.as_str() != self.network.info_endpoint() {
+            return Err("custom info endpoint requires its own portfolio stream transport".into());
+        }
+        crate::portfolio::stream::bootstrap(self.network, account, dexes)
+            .await
+            .map_err(Into::into)
     }
 
     async fn post(&self, request_body: &[u8]) -> Result<Vec<u8>, BoxError> {
@@ -1006,7 +1034,7 @@ fn encode_type_only(request_type: &'static str) -> Result<Vec<u8>, serde_json::E
     serde_json::to_vec(&Body { request_type })
 }
 
-mod private {
+pub(crate) mod private {
     pub trait Sealed {}
 
     impl Sealed for super::FundingHistoryRequest {}
