@@ -1,6 +1,6 @@
 //! Settled-funding Parquet schema, partition layout, and row provenance.
 
-use chrono::{DateTime, Utc};
+use hypercarry_core::utc::date_millis;
 use hypercarry_core::{
     info::Network,
     types::{FundingHistoryEntry, TimestampMs},
@@ -257,11 +257,11 @@ impl SettledFundingRecord {
     /// Returns [`StorageContractError::TimestampOutOfRange`] if the settlement
     /// timestamp cannot be represented as a calendar date.
     pub fn partition_directory(&self) -> Result<PathBuf, StorageContractError> {
-        let date = DateTime::<Utc>::from_timestamp_millis(self.identity.settlement_time.as_i64())
-            .ok_or(StorageContractError::TimestampOutOfRange {
+        let date = date_millis(self.identity.settlement_time.as_i64()).ok_or(
+            StorageContractError::TimestampOutOfRange {
                 timestamp_ms: self.identity.settlement_time.as_i64(),
-            })?
-            .date_naive();
+            },
+        )?;
 
         Ok(PathBuf::from(DATASET_NAME)
             .join(format!("schema_version={SCHEMA_VERSION}"))

@@ -6,10 +6,10 @@ use crate::{
     require_artifact, write_private,
 };
 use anyhow::{Context, Result, ensure};
-use chrono::DateTime;
 use fs2::FileExt;
 use hypercarry_execution::{ClientOrderId, ExecutionNetwork, Side};
 use hypercarry_mainnet_config::{RuntimeConfig, read_json, validate_private_path};
+use hypercarry_signing::ExpiryMs;
 use hypercarry_signing::Signature;
 use hypercarry_signing::SignatureRecovery as _;
 use hypercarry_signing::{Action, Chain};
@@ -154,7 +154,7 @@ fn signed_request(request: &SigningRequest, runtime: &RuntimeConfig) -> Result<V
         request.nonce,
         None,
         Some(
-            DateTime::from_timestamp_millis(i64::try_from(request.expires_after)?)
+            ExpiryMs::from_timestamp_millis(i64::try_from(request.expires_after)?)
                 .context("invalid expiry")?,
         ),
         Chain::Mainnet,

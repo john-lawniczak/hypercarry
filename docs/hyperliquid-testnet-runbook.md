@@ -73,8 +73,8 @@ then removes the socket without advancing the signer phase. Independently query
 account-wide open orders, preserve the failed
 journal, and retry only with a new signer process, fresh market/account data,
 new session and correlation IDs, and new journal/evidence paths. Signature
-scalars must retain leading zeroes as exact 32-byte hex values; commit
-`0b665ca` adds this boundary and regression coverage.
+scalars must retain leading zeroes as exact 32-byte hex values; regression
+coverage enforces this boundary.
 
 ## Normal shutdown
 

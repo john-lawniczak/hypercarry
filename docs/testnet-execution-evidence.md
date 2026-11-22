@@ -29,42 +29,19 @@ does not retroactively change or approve any historical evidence.
 - External effects: public reads only. The signing fixture key is deterministic
   test data and controls no recorded account.
 
-## Credentialed live sessions
+## Credentialed evidence is private
 
-### Clean candidate — 2026-09-01
+Retain at least three independently reviewed sessions privately, binding exact
+source and binaries, UTC interval, account, allowlist/limits, injected faults,
+final lifecycle counts, independent positions/open orders, unresolved submissions,
+policy-bypass count, secret-scan result and named human reviewer. Keep immutable
+artifacts and their hashes. Public fixture results are not credentialed evidence.
 
-- Session: `testnet-btc-20260901T160209Z-f8a0d9b9`, commit `34644b0`, from
-  2026-09-01T16:03:57Z through 2026-09-01T16:04:23Z.
-- Exact action: buy `0.00015` BTC at `78738` on official testnet; notional
-  `11.8107` USDC, client ID `0x6f09df9c73c077a5f3c31f53fc906176`, venue
-  order `59071289661`.
-- Harness result: `cancelled`, cumulative fill `0.00000`, zero unresolved
-  submissions, zero policy bypasses, and zero independent open orders.
-- Separate final-state check: official status `canceled` by venue order ID,
-  zero account-wide open orders, and zero matching user fills.
-- Automated artifact scan found no private-key, seed, mnemonic, password,
-  signature, or 32-byte `0x` secret pattern. The session directory and every
-  retained artifact are owner-only.
-- SHA-256: config `8b17a5527a006eda7b9d55f95765d6f6be145b39e18b4e190a4e6e8da3a84ddf`;
-  journal `e5700c6389fdeb15d6dc32b605610ce1fe8cd06ff5b0b43e65e9e5ca98c5dbad`;
-  evidence `ac5819af8dd09f588b0d3af0edbae99f56695ebebe24fd9d31265a08f28bca2c`;
-  operator `e959c10f38fc2fb30d9eccb21d4843296dfa3d6cdf9d0c9e5ba4f1be161589ec`;
-  signer `6cad3eb598a14d886bb9a8822771cac415ae78242e465fd8c2881bc175fbed67`;
-  independent order status `2d87bb4b1bcb8b61396b6957ed289dba5b6d35b29158998617b6e458e0b9ca21`;
-  manifest `a76707f7c1d159bd260299269ddd5273453787158fed74c41554d08e911a21de`.
-- Release-gate status: candidate only. The immutable harness evidence retains
-  `manual_secret_scan_completed: false`, `reviewer: null`, and no injected
-  faults. It cannot count toward the required three sessions until an
-  independent human reviewer manually scans the artifacts and runs the offline
-  `hypercarry-testnet-operator review` workflow. That command verifies the
-  recorded hashes, replays the journal, checks the official terminal/open-order/
-  fill artifacts, and creates a separate non-overwriting reviewer attestation.
-  No attestation has been issued for this candidate yet.
-
-Before M9 can open, record at least three independently reviewed sessions with
-commit, UTC interval, account, allowlist/limits, faults injected, final lifecycle
-counts, independent open-order count, unresolved submission count,
-policy-bypass count, secret scan result, reviewer, and secret-free artifact IDs.
+The offline `hypercarry-testnet-operator review` workflow verifies recorded hashes,
+replays the journal and checks retained official terminal/open-order/fill artifacts.
+It creates a separate non-overwriting reviewer attestation. The human must perform
+the independent venue checks and manual secret scan; software cannot assert them
+on the reviewer's behalf. No operator-specific session record is published here.
 
 ## Deterministic operator harness evidence — 2026-08-30
 

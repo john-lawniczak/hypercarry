@@ -7,15 +7,16 @@ filtered export, including unexpected untracked files, without using its history
 """
 
 import argparse
-import fnmatch
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import shutil
 import sys
 from urllib.parse import unquote, urlsplit
 
 
-EXCLUDE = ("Z-*.md", "TODO.md", "tools/export-public.sh")
+PRIVATE_DIRS = {"data", "private", "account-snapshots", "trade-journals", "keystores"}
+EXCLUDE = {"TODO.md", "tools/export-public.sh"}
 SECRET_PATTERNS = (
     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"),
     re.compile(rb"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
@@ -26,7 +27,9 @@ LINK = re.compile(r"!?\[[^\]\n]*\]\(([^\s)]+)(?:\s+[^)]*)?\)")
 
 
 def excluded(name):
-    return any(fnmatch.fnmatchcase(name, pattern) for pattern in EXCLUDE)
+    path = PurePosixPath(name)
+    return (name in EXCLUDE or any(part.lower().startswith("z-") for part in path.parts)
+            or any(part.lower() in PRIVATE_DIRS for part in path.parts))
 
 
 def forbidden(name):
@@ -84,12 +87,35 @@ def check(root, names):
     return errors
 
 
+def prune_excluded(root):
+    """Remove private staging paths without following symlinks or touching Git."""
+    _prune_children(root, root)
+
+
+def _prune_children(root, directory):
+    for item in directory.iterdir():
+        if item.name == ".git":
+            continue
+        if excluded(item.relative_to(root).as_posix()):
+            if item.is_symlink() or not item.is_dir():
+                item.unlink()
+            else:
+                shutil.rmtree(item)
+        elif item.is_dir() and not item.is_symlink():
+            _prune_children(root, item)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, help="actual filtered tree, rather than Git candidates")
+    parser.add_argument("--prune-excluded", action="store_true", help="remove private paths from an export staging tree; requires --root")
     args = parser.parse_args()
+    if args.prune_excluded and not args.root:
+        parser.error("--prune-excluded requires --root")
     if args.root:
         root = args.root.resolve(strict=True)
+        if args.prune_excluded:
+            prune_excluded(root)
         names = [item.relative_to(root).as_posix() for item in root.rglob("*")
                  if ".git" not in item.relative_to(root).parts and (item.is_symlink() or not item.is_dir())]
     else:

@@ -237,35 +237,12 @@ fault cases in the operator runbook, and independent final-state review. No
 credentialed run has occurred merely because this binary compiles or preflight
 passes.
 
-## Recorded failed-closed readiness exercise
+## Failure boundaries
 
-On 2026-08-31, the live account-mode, unified collateral, zero-open-orders,
-agent authorization, signer socket, and offline preflight gates passed. The
-encrypted Foundry provider produced a bounded order signature, but the operator
-rejected its minimally encoded leading-zero scalar before `/exchange`. An
-independent follow-up query returned zero open orders. Commit `0b665ca` changed
-the provider to fixed-width 32-byte `r` and `s` encoding and added a regression
-test. This exercise produced no lifecycle evidence and does not count toward
-the three required clean credentialed sessions.
-
-On 2026-09-01, a fresh session at commit `df1f911` passed offline and live
-account gates, then timed out at the signer boundary while its interactive
-`cast` child remained active. The journal contains only an allowed risk decision
-and the exact action; no signed or submitted state was recorded. An independent
-official query returned zero open orders. The child and signer were stopped and
-the socket was removed. The signer now cancels and reaps `cast` when interrupted
-instead of handling signals only in its connection-accept loop.
-
-A later 2026-09-01 session at commit `e11e7ff` signed and submitted one bounded
-order and its exact cancel, then failed closed during REST reconciliation because
-the official `orderStatus` response wrapped the terminal state in a nested
-`{"status":"order"}` envelope. Independent queries by both venue order ID and
-`cloid` returned `canceled`, account-wide open orders were zero, and matching
-fills were empty. The session produced no evidence and does not count toward the
-three clean sessions. The parser now accepts that recorded nested response shape.
-
-Commit `34644b0` subsequently produced the first clean credentialed candidate,
-`testnet-btc-20260901T160209Z-f8a0d9b9`, with a cancelled terminal state, zero
-fills, zero open orders, and zero unresolved submissions or policy bypasses.
-Its immutable artifact hashes are recorded in `testnet-execution-evidence.md`.
-It remains uncounted until an independent human runs the review workflow above.
+The Foundry provider preserves fixed-width 32-byte signature scalars and cancels
+and reaps interactive children on interruption. REST reconciliation accepts the
+official nested terminal-order envelope. Offline regressions exercise these
+contracts. Failed attempts retain their journals and require independent final
+state checks; they cannot count as successful credentialed qualification.
+Retain live session IDs, source identities and review attestations privately as
+described in [the evidence contract](testnet-execution-evidence.md).

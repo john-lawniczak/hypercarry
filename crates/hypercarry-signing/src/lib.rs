@@ -1,11 +1,31 @@
 //! Narrow Hyperliquid L1 signing boundary. No network access or key loading.
 //! Wire order is consensus-sensitive: do not hash a generic JSON map.
+pub mod bracket;
 pub use alloy_primitives::{Address, B256, Signature, U256, keccak256};
 use alloy_sol_types::{SolStruct, eip712_domain, sol};
 use anyhow::{Result, ensure};
-use chrono::{DateTime, Utc};
+
 pub use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
+
+/// Nonnegative Unix milliseconds for the signing wire, independent of calendars.
+/// The upper bound preserves chrono's former maximum UTC millisecond timestamp.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExpiryMs(i64);
+impl ExpiryMs {
+    /// Construct an expiry without floating-point or calendar conversion.
+    pub const fn from_timestamp_millis(value: i64) -> Option<Self> {
+        if value >= 0 && value <= 8_210_266_876_799_999 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+    /// Exact milliseconds serialized into the signed connection hash.
+    pub const fn timestamp_millis(self) -> i64 {
+        self.0
+    }
+}
 
 /// Signing domain, independent of Ethereum's EIP-712 chain ID.
 #[derive(Clone, Copy, Debug)]
@@ -126,7 +146,7 @@ impl ActionRequest {
         let expiry = self
             .expires_after
             .map(|v| {
-                DateTime::from_timestamp_millis(i64::try_from(v)?)
+                ExpiryMs::from_timestamp_millis(i64::try_from(v)?)
                     .ok_or_else(|| anyhow::anyhow!("invalid expiry"))
             })
             .transpose()?;
@@ -148,26 +168,11 @@ impl Action {
         &self,
         nonce: u64,
         vault: Option<Address>,
-        expiry: Option<DateTime<Utc>>,
+        expiry: Option<ExpiryMs>,
         chain: Chain,
     ) -> Result<B256> {
         ensure!(vault.is_none(), "vault signing unsupported");
-        let mut bytes = rmp_serde::to_vec_named(self)?;
-        bytes.extend(nonce.to_be_bytes());
-        bytes.push(0);
-        if let Some(expiry) = expiry {
-            bytes.push(0);
-            bytes.extend(u64::try_from(expiry.timestamp_millis())?.to_be_bytes());
-        }
-        let agent = Agent {
-            source: match chain {
-                Chain::Mainnet => "a",
-                Chain::Testnet => "b",
-            }
-            .into(),
-            connectionId: keccak256(bytes),
-        };
-        Ok(agent.eip712_signing_hash(&eip712_domain! { name: "Exchange", version: "1", chain_id: 1337, verifying_contract: Address::ZERO, }))
+        l1_prehash(self, nonce, expiry, chain)
     }
     /// Sign an exact supported action using a caller-owned signer.
     /// # Errors
@@ -177,7 +182,7 @@ impl Action {
         signer: &S,
         nonce: u64,
         vault: Option<Address>,
-        expiry: Option<DateTime<Utc>>,
+        expiry: Option<ExpiryMs>,
         chain: Chain,
     ) -> Result<ActionRequest> {
         let hash = self.prehash(nonce, vault, expiry, chain)?;
@@ -204,13 +209,36 @@ impl Action {
         signature: &WireSignature,
         nonce: u64,
         vault: Option<Address>,
-        expiry: Option<DateTime<Utc>>,
+        expiry: Option<ExpiryMs>,
         chain: Chain,
     ) -> Result<Address> {
         ensure!(matches!(signature.v, 27 | 28), "invalid recovery parity");
         Signature::new(signature.r, signature.s, signature.v == 28)
             .recover_address_from_prehash(&self.prehash(nonce, vault, expiry, chain)?)
     }
+}
+fn l1_prehash(
+    action: &impl Serialize,
+    nonce: u64,
+    expiry: Option<ExpiryMs>,
+    chain: Chain,
+) -> Result<B256> {
+    let mut bytes = rmp_serde::to_vec_named(action)?;
+    bytes.extend(nonce.to_be_bytes());
+    bytes.push(0);
+    if let Some(expiry) = expiry {
+        bytes.push(0);
+        bytes.extend(u64::try_from(expiry.timestamp_millis())?.to_be_bytes());
+    }
+    let agent = Agent {
+        source: match chain {
+            Chain::Mainnet => "a",
+            Chain::Testnet => "b",
+        }
+        .into(),
+        connectionId: keccak256(bytes),
+    };
+    Ok(agent.eip712_signing_hash(&eip712_domain! {name:"Exchange",version:"1",chain_id:1337,verifying_contract:Address::ZERO,}))
 }
 /// Recovery uses modern k256 exclusively; Alloy supplies only public wire types.
 pub trait SignatureRecovery {

@@ -52,6 +52,10 @@ change the order, account or release configuration.
 ## Tool contracts
 
 - `get_funding_snapshot`, `get_funding_apr`, `get_dataset_health`: `{coin}`.
+  `get_funding_apr` and `get_dataset_health` are intentional aliases of the
+  same analytics command and return the identical payload (settlement/APR
+  plus freshness/contiguous-history coverage); they exist as two names so a
+  client can call by intent without parsing the full response either way.
 - `get_funding_history`: `{coin,start_ms,end_ms,limit?}`. Inclusive range,
   default 100/max 1000 records. Use `next_start_ms` for the next page. Coverage
   checks the entire requested window including both boundary brackets, not

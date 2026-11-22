@@ -2,6 +2,7 @@
 
 #![warn(missing_docs)]
 
+mod account;
 mod apr;
 mod artifacts;
 mod backfill;
@@ -52,6 +53,42 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Inspect a public trading account without credentials.
+    Account {
+        #[arg(long)]
+        network: Network,
+        #[arg(long)]
+        address: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+        output: OutputFormat,
+        #[command(subcommand)]
+        view: account::AccountView,
+    },
+    /// Preview an isolated bracket from a JSON plan input; never signs or trades.
+    TradePreview {
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+        output: OutputFormat,
+    },
+    /// Calculate a non-executable bracket from supplied input/market JSON on stdin.
+    TradeCalculate,
+    /// Independently check whether a `portfolio --archive-dir` collector has
+    /// stopped running, by the archive directory's own heartbeat file age.
+    /// No network or account access; detects a crashed/wedged/never-started
+    /// collector from the outside rather than trusting it to self-report.
+    PortfolioHeartbeatCheck {
+        #[arg(long)]
+        network: Network,
+        /// The same directory passed to `account ... portfolio --archive-dir`.
+        #[arg(long)]
+        archive_dir: PathBuf,
+        /// Maximum age of the heartbeat file before it is reported stale.
+        #[arg(long)]
+        max_age_ms: u64,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+        output: OutputFormat,
+    },
     /// Fetch a live market and funding snapshot.
     Snapshot {
         /// Hyperliquid deployment to query; no implicit default.
@@ -265,6 +302,44 @@ fn main() -> anyhow::Result<()> {
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
     match cli.command {
+        Command::Account {
+            network,
+            address,
+            output,
+            view,
+        } => {
+            if cli.config.is_some() {
+                return Err(CliError::new(
+                    ErrorCategory::Configuration,
+                    "account uses explicit flags, not --config",
+                ));
+            }
+            account::run(network, &address, &view, output)
+        }
+        Command::TradePreview { plan, output } => {
+            if cli.config.is_some() {
+                return Err(CliError::new(
+                    ErrorCategory::Configuration,
+                    "trade-preview uses its plan document, not --config",
+                ));
+            }
+            account::preview(&plan, output)
+        }
+        Command::TradeCalculate => account::calculate(),
+        Command::PortfolioHeartbeatCheck {
+            network,
+            archive_dir,
+            max_age_ms,
+            output,
+        } => {
+            if cli.config.is_some() {
+                return Err(CliError::new(
+                    ErrorCategory::Configuration,
+                    "portfolio-heartbeat-check uses explicit flags, not --config",
+                ));
+            }
+            account::heartbeat_check(network, &archive_dir, max_age_ms, output)
+        }
         Command::Snapshot {
             network,
             coin,
@@ -490,5 +565,69 @@ mod tests {
         ])
         .expect_err("unknown CLI network must be rejected");
         assert_eq!(invalid.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn account_requires_explicit_network_and_has_no_trade_subcommand() {
+        let address = "0x1111111111111111111111111111111111111111";
+        assert!(
+            Cli::try_parse_from(["hypercarry", "account", "--address", address, "status"]).is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "hypercarry",
+                "account",
+                "--network",
+                "mainnet",
+                "--address",
+                address,
+                "status"
+            ])
+            .is_ok()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "hypercarry",
+                "account",
+                "--network",
+                "mainnet",
+                "--address",
+                address,
+                "submit"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["hypercarry", "trade-preview", "--plan", "example.json"]).is_ok()
+        );
+    }
+
+    #[test]
+    fn portfolio_accepts_exit_check_with_explicit_account_and_json_output() {
+        let cli = Cli::try_parse_from([
+            "hypercarry",
+            "account",
+            "--network",
+            "mainnet",
+            "--address",
+            "0x1111111111111111111111111111111111111111",
+            "--output",
+            "json",
+            "portfolio",
+            "--require-exits",
+            "--archive-dir",
+            "data/account-snapshots",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Account {
+                view: account::AccountView::Portfolio {
+                    require_exits: true,
+                    archive_dir: Some(path),
+                },
+                ..
+            } if path == std::path::Path::new("data/account-snapshots")
+        ));
     }
 }

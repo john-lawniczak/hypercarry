@@ -1,0 +1,14 @@
+{
+  "network": "testnet",
+  "account": "0x1111111111111111111111111111111111111111",
+  "coin": "SOL",
+  "direction": "short",
+  "notional_budget": "90",
+  "leverage": 1,
+  "reserve_usdc": "10",
+  "entry_slippage_percent": "0.5",
+  "exit_slippage_percent": "10",
+  "take_profit": "70",
+  "stop_loss": "95",
+  "min_health_at_stop": "2"
+}

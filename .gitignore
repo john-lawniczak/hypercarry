@@ -2,7 +2,6 @@
 /target/
 
 # Recorded datasets (see README: data is local, not committed)
-/data/
 *.parquet
 *.duckdb
 
@@ -21,3 +20,18 @@
 # Local Python tooling caches
 __pycache__/
 *.pyc
+
+# PRIVATE OPERATOR MATERIAL — never publish to the OSS repository.
+# Matches any Z-/z- name, extension or directory at any depth.
+# Existing tracked journals remain in the PRIVATE repository. gitignore does
+# not remove tracked files or history: public releases MUST use the filtered
+# exporter and its content checks, never push/merge private Git history.
+[Zz]-*
+
+# Private storage directory names, any depth and case (data, private,
+# account-snapshots, trade-journals, keystores).
+[Dd][Aa][Tt][Aa]/
+[Pp][Rr][Ii][Vv][Aa][Tt][Ee]/
+[Aa][Cc][Cc][Oo][Uu][Nn][Tt]-[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt][Ss]/
+[Tt][Rr][Aa][Dd][Ee]-[Jj][Oo][Uu][Rr][Nn][Aa][Ll][Ss]/
+[Kk][Ee][Yy][Ss][Tt][Oo][Rr][Ee][Ss]/

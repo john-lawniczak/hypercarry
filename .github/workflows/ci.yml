@@ -36,7 +36,9 @@ jobs:
       - name: install cargo-deny
         uses: taiki-e/install-action@cargo-deny
       - name: audit dependencies, licenses, and sources
-        run: cargo deny check
+        run: |
+          cargo deny check
+          python3 tools/check_dependency_policy.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -56,6 +58,11 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: test
         run: cargo test --workspace --all-features --locked
+      - name: offline local operator integration
+        run: |
+          python3 -m venv /tmp/hypercarry-local-sdk
+          /tmp/hypercarry-local-sdk/bin/pip install hyperliquid-python-sdk==0.24.0
+          /tmp/hypercarry-local-sdk/bin/python tools/check_local_operator.py
       - name: build
         run: cargo build --workspace --all-features --release --locked
 

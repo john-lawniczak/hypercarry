@@ -1,7 +1,7 @@
 # Post-implementation audit — 2026-11-03
 
-Scope: all seven November 3 implementation commits, `4e54f9b` through `d0b1051`,
-against `c643be9`, including nearby executor, signer and recovery code. This
+Scope: the November 3 execution and operational implementation changes,
+including nearby executor, signer and recovery code. This
 review focused on actual failure paths, configuration boundaries, concurrency,
 cryptographic input validation, packaging and the strength of the tests. The
 fixes below are applied; no account was funded, infrastructure provisioned or

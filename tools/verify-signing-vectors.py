@@ -29,10 +29,16 @@ def wire_action(action):
     kind = action["type"]
     if kind == "order":
         keys = ["a", "b", "p", "s", "r", "t", "c"]
+        orders = []
+        for order in action["orders"]:
+            ordered = {key: order[key] for key in keys if key in order}
+            if "trigger" in ordered["t"]:
+                trigger = ordered["t"]["trigger"]
+                ordered["t"] = {"trigger": {key: trigger[key] for key in ["isMarket", "triggerPx", "tpsl"]}}
+            orders.append(ordered)
         return dict(
             type=kind,
-            orders=[{key: order[key] for key in keys if key in order}
-                    for order in action["orders"]],
+            orders=orders,
             grouping=action["grouping"],
         )
     if kind in ["cancel", "cancelByCloid"]:
@@ -44,6 +50,10 @@ def wire_action(action):
         )
     if kind == "scheduleCancel":
         return dict(type=kind, time=action["time"])
+    if kind == "updateLeverage":
+        return {key: action[key] for key in ["type", "asset", "isCross", "leverage"]}
+    if kind == "updateIsolatedMargin":
+        return {key: action[key] for key in ["type", "asset", "isBuy", "ntli"]}
     raise ValueError(f"Unsupported fixture action: {kind}")
 
 
@@ -52,6 +62,9 @@ def main():
     fixture = root / "crates/hypercarry-signing/tests/fixtures/legacy-vectors.json"
     vectors = json.loads(fixture.read_text())
     require_equal(len(vectors), 28, "fixture count")
+    brackets = json.loads(fixture.with_name("bracket-vectors.json").read_text())
+    require_equal(len(brackets), 14, "bracket fixture count")
+    vectors.extend(brackets)
     wallet = Account.from_key(bytes.fromhex("00" * 31 + "01"))
     for index, vector in enumerate(vectors):
         signed = vector["signed"]

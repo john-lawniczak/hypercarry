@@ -557,7 +557,21 @@ mod tests {
             b"existing observation"
         );
         drop(first);
-        assert!(lock_health(&config).is_ok());
+        // Parallel process tests can fork while this descriptor is open. The
+        // child retains the flock until its close-on-exec boundary, even after
+        // the parent drops its copy. Require eventual release within one second;
+        // the competing-writer assertion above remains immediate and strict.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            if lock_health(&config).is_ok() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "supervisor lock was not released"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 
     fn runtime() -> RuntimeConfig {

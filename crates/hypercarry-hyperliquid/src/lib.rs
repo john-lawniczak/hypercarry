@@ -23,3 +23,6 @@ pub use venue::{
 };
 #[cfg(all(feature = "local-signer", feature = "testnet-execution"))]
 pub use venue::{LocalSignerError, LocalTestnetSigner};
+
+#[cfg(feature = "local-signer")]
+pub use venue::recovery::TestnetRecoveryAdapter;

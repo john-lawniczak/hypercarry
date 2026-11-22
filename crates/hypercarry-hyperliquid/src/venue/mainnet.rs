@@ -285,7 +285,7 @@ pub(super) fn verify_mainnet_signature(
             .map_err(|_| venue_schema("invalid mainnet signature encoding"))?;
     let expiry = i64::try_from(request.expires_after)
         .ok()
-        .and_then(chrono::DateTime::from_timestamp_millis)
+        .and_then(hypercarry_signing::ExpiryMs::from_timestamp_millis)
         .ok_or_else(|| venue_schema("mainnet signature expiry is invalid"))?;
     let recovered = action
         .recover(
@@ -465,7 +465,7 @@ mod tests {
                     &local_signer(),
                     request.nonce,
                     None,
-                    chrono::DateTime::from_timestamp_millis(
+                    hypercarry_signing::ExpiryMs::from_timestamp_millis(
                         i64::try_from(request.expires_after).unwrap(),
                     ),
                     if self.wrong_domain {

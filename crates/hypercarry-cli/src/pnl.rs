@@ -2,11 +2,11 @@ use crate::{
     config::{OutputFormat, PnlOptions},
     error::{CliError, ErrorCategory},
 };
-use chrono::{DateTime, SecondsFormat, Utc};
 use hypercarry_core::carry::{
     CarryError, CarryExit, CarryPnl, CarrySide, CarryTrade, FeeSchedule, FundingSettlement,
     annualized_return,
 };
+use hypercarry_core::utc::format_millis;
 use hypercarry_storage::{dataset::SettledFundingDataset, settled_funding::SettledFundingRecord};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -445,14 +445,12 @@ fn carry_error(error: CarryError) -> CliError {
 }
 
 fn iso_time(time_ms: i64) -> Result<String, CliError> {
-    Ok(DateTime::<Utc>::from_timestamp_millis(time_ms)
-        .ok_or_else(|| {
-            CliError::new(
-                ErrorCategory::Schema,
-                format!("timestamp {time_ms}ms cannot be formatted as UTC"),
-            )
-        })?
-        .to_rfc3339_opts(SecondsFormat::Millis, true))
+    format_millis(time_ms).ok_or_else(|| {
+        CliError::new(
+            ErrorCategory::Schema,
+            format!("timestamp {time_ms}ms cannot be formatted as UTC"),
+        )
+    })
 }
 
 /// A percentage for the human view, rounded for display only.

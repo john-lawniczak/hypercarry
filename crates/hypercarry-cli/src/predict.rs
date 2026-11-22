@@ -2,7 +2,7 @@ use crate::{
     config::{OutputFormat, PredictOptions},
     error::{CliError, ErrorCategory},
 };
-use chrono::{DateTime, SecondsFormat, Utc};
+use hypercarry_core::utc::format_millis;
 use hypercarry_core::{
     predictor::{
         FUNDING_HOUR_MS, FundingPrediction, OfficialBenchmark, PredictionEvaluation,
@@ -405,10 +405,7 @@ fn output_error(error: io::Error) -> CliError {
 }
 
 fn timestamp_utc(timestamp_ms: i64) -> String {
-    DateTime::<Utc>::from_timestamp_millis(timestamp_ms).map_or_else(
-        || format!("invalid UTC timestamp {timestamp_ms}"),
-        |timestamp| timestamp.to_rfc3339_opts(SecondsFormat::Millis, true),
-    )
+    format_millis(timestamp_ms).unwrap_or_else(|| format!("invalid UTC timestamp {timestamp_ms}"))
 }
 
 #[cfg(test)]

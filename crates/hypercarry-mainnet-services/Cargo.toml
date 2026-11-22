@@ -38,7 +38,6 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
-chrono.workspace = true
 hypercarry-signing.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
 hypercarry-execution = { version = "=0.0.0", path = "../hypercarry-execution" }
@@ -48,7 +47,7 @@ sha2 = "0.11"
 fs2 = "0.4"
 tempfile = "3"
 signal-hook = "0.4"
-base64 = "0.23"
+base64 = "0.22"
 rustix = { version = "1", features = ["process"] }
 
 [lints]

@@ -8,12 +8,15 @@ rust-version.workspace = true
 description = "Core types, typed Hyperliquid info client, and funding metrics for hypercarry."
 
 [dependencies]
+time.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
 tracing.workspace = true
 tokio.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 
 [dev-dependencies]
 criterion = "0.8"

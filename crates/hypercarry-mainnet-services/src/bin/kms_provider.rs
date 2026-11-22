@@ -492,9 +492,11 @@ mod tests {
             kms_key_arn: arn.into(),
             key_id: "fixture".into(),
             signer_address: signer.address(),
-            timeout_ms: 1000,
+            // This checks digest/identity, not cold process-launch latency.
+            timeout_ms: 5000,
         };
-        assert!(sign(&config, &request).is_ok());
+        let result = sign(&config, &request);
+        assert!(result.is_ok(), "public fixture KMS result: {result:?}");
         config.kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/other".into();
         assert!(sign(&config, &request).is_err());
     }
